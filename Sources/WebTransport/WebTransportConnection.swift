@@ -77,4 +77,16 @@ public actor WebTransportConnection: Sendable {
             try await body(inboundStream, outboundStream)
         }
     }
+
+    public func withUnidirectionalStream(
+        body: (NIOAsyncChannelOutboundWriter<ByteBuffer>) async throws -> Void
+    ) async throws {
+        try await self.h3Connection.makeUnidirectionalStream().executeThenClose { _, outboundStream in
+            var buffer = ByteBuffer()
+            buffer.writeEncodedInteger(0x54, strategy: .quic)
+            buffer.writeEncodedInteger(0x00, strategy: .quic)
+            try await outboundStream.write(buffer)
+            try await body(outboundStream)
+        }
+    }
 }

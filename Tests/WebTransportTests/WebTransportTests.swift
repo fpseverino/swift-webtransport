@@ -22,7 +22,6 @@ struct WebTransportTests {
             host: "127.0.0.1",
             port: 6121,
             path: "/webtransport",
-            // Pretty sure webtransport-go expects them in a wrong format
             applicationProtocols: ["webtransport-test", "webtransport-test-2"],
             trustRootsFilePath: Self.trustRootsFilePath
         ) { connection in
@@ -38,6 +37,10 @@ struct WebTransportTests {
                 var inboundStreamIterator = inbound.makeAsyncIterator()
                 let inboundStreamData = try await inboundStreamIterator.next()
                 print("Received inbound stream data: \(String(buffer: inboundStreamData ?? ByteBuffer(string: "error.")))")
+            }
+
+            try await connection.withUnidirectionalStream { outbound in
+                try await outbound.write(ByteBuffer(string: "Hello from unidirectional stream!"))
             }
         }
     }

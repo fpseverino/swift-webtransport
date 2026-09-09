@@ -168,4 +168,23 @@ extension HTTP3ClientConnection {
             }
         }.get()
     }
+
+    /// > Note: This requires changes in NIOHTTP3 to expose the `streamCreator`.
+    func makeUnidirectionalStream() async throws -> NIOAsyncChannel<ByteBuffer, ByteBuffer> {
+        try await self.h3Handler.eventLoop.flatSubmit {
+            self.h3Handler.value.coordinator.streamCreator.createUnidirectionalStream { streamInitializer in
+                print("Stream ID: \(streamInitializer.streamID)")
+                return streamInitializer.channel.eventLoop.makeCompletedFuture {
+                    try NIOAsyncChannel(
+                        wrappingChannelSynchronously: streamInitializer.channel,
+                        configuration: .init(
+                            isOutboundHalfClosureEnabled: true,
+                            inboundType: ByteBuffer.self,
+                            outboundType: ByteBuffer.self
+                        )
+                    )
+                }
+            }
+        }.get()
+    }
 }

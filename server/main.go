@@ -196,6 +196,30 @@ func echoSession(sess *webtransport.Session) {
 		}
 	}()
 
+	go func() {
+		for {
+			stream, err := sess.AcceptUniStream(ctx)
+			if err != nil {
+				log.Printf("accepting unidirectional stream failed: %v", err)
+				return
+			}
+			log.Printf("accepted unidirectional stream %d", stream.StreamID())
+			go func() {
+				buffer := make([]byte, 32*1024)
+				for {
+					n, readErr := stream.Read(buffer)
+					if n > 0 {
+						log.Printf("received unidirectional stream data: %q", buffer[:n])
+					}
+					if readErr != nil {
+						log.Printf("reading unidirectional stream failed: %v", readErr)
+						return
+					}
+				}
+			}()
+		}
+	}()
+
 	for {
 		data, err := sess.ReceiveDatagram(ctx)
 		if err != nil {
