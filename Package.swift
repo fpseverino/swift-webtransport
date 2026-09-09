@@ -28,7 +28,7 @@ let package = Package(
             name: "WebTransport",
             dependencies: [
                 .product(name: "HTTPTypes", package: "swift-http-types"),
-                .product(name: "StructuredFieldValues", package: "swift-http-structured-headers"),
+                .product(name: "RawStructuredFieldValues", package: "swift-http-structured-headers"),
                 // NIO
                 .product(name: "NIOCore", package: "swift-nio"),
                 .product(name: "NIOPosix", package: "swift-nio"),

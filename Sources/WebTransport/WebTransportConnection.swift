@@ -6,7 +6,7 @@ import NIOHTTPTypes
 public import NIOPosix
 import NIOQUIC
 import NIOQUICHelpers
-import StructuredFieldValues
+import RawStructuredFieldValues
 
 public func withWebTransportConnection(
     host: String,
@@ -25,6 +25,7 @@ public func withWebTransportConnection(
         logger: logger,
         eventLoopGroup: eventLoopGroup
     ) { inbound, outbound, h3Connection in
+        var headerSerializer = StructuredFieldValueSerializer()
         var connectRequest = HTTPRequest(
             method: .connect,
             scheme: "https",
@@ -33,7 +34,11 @@ public func withWebTransportConnection(
             headerFields: try .init(parsedTrailerFields: [
                 .init(
                     name: .init("WT-Available-Protocols")!,
-                    value: StructuredFieldValueEncoder().encode(WTAvailableProtocols(items: applicationProtocols))
+                    value: headerSerializer.writeListFieldValue(
+                        applicationProtocols.map {
+                            .item(.init(bareItem: RFC9651BareItem.string($0), parameters: [:]))
+                        }
+                    )
                 )
             ])
         )
@@ -72,9 +77,4 @@ public actor WebTransportConnection: Sendable {
             try await body(inboundStream, outboundStream)
         }
     }
-}
-
-struct WTAvailableProtocols: StructuredFieldValue {
-    static let structuredFieldType: StructuredFieldType = .list
-    var items: [String]
 }
