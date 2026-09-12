@@ -42,7 +42,7 @@ let package = Package(
             swiftSettings: swiftSettings
         ),
         .testTarget(
-            name: "WebTransportTests",
+            name: "IntegrationTests",
             dependencies: [
                 .target(name: "WebTransport")
             ],

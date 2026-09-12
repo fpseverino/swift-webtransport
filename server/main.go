@@ -225,6 +225,7 @@ func echoSession(sess *webtransport.Session) {
 		if err != nil {
 			return
 		}
+		fmt.Printf("received datagram: %q\n", data)
 		if err := sess.SendDatagram(data); err != nil {
 			return
 		}

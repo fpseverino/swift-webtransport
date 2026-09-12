@@ -8,36 +8,32 @@ import NIOPosix
 import NIOQUIC
 import NIOQUICHelpers
 
-func withH3Connection(
-    host: String,
+func withH3Connection<Value>(
+    ipAddress: String,
     port: Int,
-    trustRootsFilePath: String,
+    verificationConfiguration: VerificationConfiguration,
     logger: Logger,
     eventLoopGroup: any EventLoopGroup,
-    body:
-        sending (
-            NIOAsyncChannelInboundStream<HTTPResponsePart>,
-            NIOAsyncChannelOutboundWriter<HTTPRequestPart>,
-            HTTP3ClientConnection<Never, NIOQUIC.QUICStreamCreator>
-        ) async throws -> Void
-) async throws {
+    body: (
+        NIOAsyncChannelInboundStream<HTTPResponsePart>,
+        NIOAsyncChannelOutboundWriter<HTTPRequestPart>,
+        HTTP3ClientConnection<Never, NIOQUIC.QUICStreamCreator>
+    ) async throws -> Value
+) async throws -> Value {
     let (quicChannel, connectionCreator) = try await DatagramBootstrap(group: eventLoopGroup)
         .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
         .bind(host: "127.0.0.1", port: 0) { channel in
             channel.eventLoop.makeCompletedFuture {
-                let asyncVerifier = try AsyncVerifier(trustRootsPath: trustRootsFilePath, eventLoop: channel.eventLoop)
-                let quicHandler = QUICHandler(
+                let (quicHandler, _) = try QUICHandler.makeHandlerAndConnectionMultiplexer(
                     channel: channel,
                     quicConfiguration: QUICConfiguration.client(
-                        verificationConfiguration: .x509Certificates(trustRootsFilePath: trustRootsFilePath),
+                        verificationConfiguration: verificationConfiguration,
                         applicationProtocols: ["h3"]
                     ),
-                    asyncVerifier: asyncVerifier,
-                    authenticator: nil,
                     logger: logger,
-                    inboundConnectionInitializer: { _, _ in fatalError() },
-                    inboundStreamInitializer: { _ in fatalError() },
-                    noMoreConnections: {}
+                    inboundStreamChannelInitializer: { channel -> EventLoopFuture<Never> in
+                        channel.eventLoop.makeCompletedFuture { fatalError() }
+                    }
                 )
                 try channel.pipeline.syncOperations.addHandler(quicHandler)
                 let connectionCreator = TestHTTP3SingleConnectionCreator(
@@ -78,7 +74,7 @@ func withH3Connection(
 
     let h3Connection = try await multiplexer.concurrencyView.createConnection(
         serverName: "127.0.0.1",
-        remoteAddress: .init(ipAddress: host, port: port),
+        remoteAddress: .init(ipAddress: ipAddress, port: port),
         inboundPushStreamInitializer: { _ in fatalError("Push streams not supported") }
     )
 
@@ -89,10 +85,19 @@ func withH3Connection(
         return connectionChannelFuture
     }.get()
 
-    try await h3Connection.makeRequestStream().executeThenClose { try await body($0, $1, h3Connection) }
+    do {
+        let value = try await h3Connection.makeRequestStream().executeThenClose { try await body($0, $1, h3Connection) }
 
-    try await quicChannel.close()
-    try await connectionChannel.close()
+        try await quicChannel.close()
+        try await connectionChannel.close()
+
+        return value
+    } catch {
+        try await quicChannel.close()
+        try await connectionChannel.close()
+
+        throw error
+    }
 }
 
 struct TestHTTP3SingleConnectionCreator: HTTP3ConnectionCreator {
