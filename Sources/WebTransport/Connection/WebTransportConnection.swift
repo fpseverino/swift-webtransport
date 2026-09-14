@@ -75,9 +75,8 @@ public final actor WebTransportConnection: Sendable {
                 case .head(let response) = headResponsePart,
                 response.status == .ok
             else {
-                fatalError("Failed to establish WebTransport connection. Expected HTTP 200 OK response.")
+                throw WebTransportError.serverRejectedSession
             }
-            print("Response headers: \(response.headerFields)")
 
             return try await operation(WebTransportConnection(h3Connection: h3Connection, logger: logger))
         }
