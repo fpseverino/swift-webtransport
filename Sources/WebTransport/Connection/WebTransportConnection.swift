@@ -13,14 +13,17 @@ public final actor WebTransportConnection: Sendable {
     /// The logger to use for this connection.
     let logger: Logger
     let h3Connection: HTTP3ClientConnection<Never, NIOQUIC.QUICStreamCreator>
+    nonisolated public let incomingBidirectionalStreams: AsyncStream<NIOAsyncChannel<ByteBuffer, ByteBuffer>>
 
     /// Initializes the WebTransport connection.
     init(
+        logger: Logger,
         h3Connection: HTTP3ClientConnection<Never, NIOQUIC.QUICStreamCreator>,
-        logger: Logger
+        incomingBidirectionalStreams: AsyncStream<NIOAsyncChannel<ByteBuffer, ByteBuffer>>
     ) {
-        self.h3Connection = h3Connection
         self.logger = logger
+        self.h3Connection = h3Connection
+        self.incomingBidirectionalStreams = incomingBidirectionalStreams
     }
 
     /// Connect to the WebTransport server and run operations using the connection
@@ -48,7 +51,7 @@ public final actor WebTransportConnection: Sendable {
             verificationConfiguration: configuration.verificationConfiguration,
             logger: logger,
             eventLoopGroup: eventLoopGroup
-        ) { inbound, outbound, h3Connection in
+        ) { inbound, outbound, h3Connection, incomingBidirectionalStreams in
             var headerSerializer = StructuredFieldValueSerializer()
             var connectRequest = HTTPRequest(
                 method: .connect,
@@ -78,7 +81,13 @@ public final actor WebTransportConnection: Sendable {
                 throw WebTransportError.serverRejectedSession
             }
 
-            return try await operation(WebTransportConnection(h3Connection: h3Connection, logger: logger))
+            return try await operation(
+                WebTransportConnection(
+                    logger: logger,
+                    h3Connection: h3Connection,
+                    incomingBidirectionalStreams: incomingBidirectionalStreams
+                )
+            )
         }
     }
 

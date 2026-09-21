@@ -17,8 +17,8 @@ struct WebTransportConnectionTests {
         .appending(path: "server/cert.pem")
         .path()
 
-    @Test
-    func example() async throws {
+    @Test("Open Streams")
+    func openStreams() async throws {
         try await WebTransportConnection.withConnection(
             ipAddress: "127.0.0.1",
             port: 6121,
@@ -44,6 +44,33 @@ struct WebTransportConnectionTests {
 
             try await connection.withUnidirectionalStream { outbound in
                 try await outbound.write(ByteBuffer(string: "Hello from unidirectional stream!"))
+            }
+        }
+    }
+
+    @Test("Incoming Streams")
+    func incomingStreams() async throws {
+        try await WebTransportConnection.withConnection(
+            ipAddress: "127.0.0.1",
+            port: 6121,
+            configuration: .init(
+                verificationConfiguration: .x509Certificates(trustRootsFilePath: Self.trustRootsFilePath),
+                applicationProtocols: ["webtransport-test", "webtransport-test-2"],
+                urlPath: "/webtransport"
+            )
+        ) { connection in
+            try await connection.withBidirectionalStream { inbound, outbound in
+                try await outbound.write(ByteBuffer(string: "open"))
+            }
+
+            for await stream in connection.incomingBidirectionalStreams {
+                try await stream.executeThenClose { inbound, outbound in
+                    for try await message in inbound {
+                        print("Received incoming stream message: \(String(buffer: message))")
+                        break
+                    }
+                }
+                break
             }
         }
     }

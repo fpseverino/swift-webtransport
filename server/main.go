@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/sha256"
@@ -182,7 +183,9 @@ func echoSession(sess *webtransport.Session) {
 					n, readErr := stream.Read(buffer)
 					if n > 0 {
 						log.Printf("received stream data: %q", buffer[:n])
-						if _, writeErr := stream.Write(buffer[:n]); writeErr != nil {
+						if string(buffer[:n]) == "open" {
+							openServerStream(ctx, sess)
+						} else if _, writeErr := stream.Write(buffer[:n]); writeErr != nil {
 							log.Printf("writing stream echo failed: %v", writeErr)
 							return
 						}
@@ -210,6 +213,9 @@ func echoSession(sess *webtransport.Session) {
 					n, readErr := stream.Read(buffer)
 					if n > 0 {
 						log.Printf("received unidirectional stream data: %q", buffer[:n])
+						if string(buffer[:n]) == "open" {
+							openServerUniStream(ctx, sess)
+						}
 					}
 					if readErr != nil {
 						log.Printf("reading unidirectional stream failed: %v", readErr)
@@ -229,5 +235,33 @@ func echoSession(sess *webtransport.Session) {
 		if err := sess.SendDatagram(data); err != nil {
 			return
 		}
+	}
+}
+
+// openServerStream opens a new server-initiated bidirectional stream in response to an "open" request.
+func openServerStream(ctx context.Context, sess *webtransport.Session) {
+	stream, err := sess.OpenStreamSync(ctx)
+	if err != nil {
+		log.Printf("opening bidirectional stream failed: %v", err)
+		return
+	}
+	log.Printf("opened bidirectional stream %d", stream.StreamID())
+	defer stream.Close()
+	if _, err := stream.Write([]byte("opened")); err != nil {
+		log.Printf("writing to opened bidirectional stream failed: %v", err)
+	}
+}
+
+// openServerUniStream opens a new server-initiated unidirectional stream in response to an "open" request.
+func openServerUniStream(ctx context.Context, sess *webtransport.Session) {
+	stream, err := sess.OpenUniStreamSync(ctx)
+	if err != nil {
+		log.Printf("opening unidirectional stream failed: %v", err)
+		return
+	}
+	log.Printf("opened unidirectional stream %d", stream.StreamID())
+	defer stream.Close()
+	if _, err := stream.Write([]byte("opened")); err != nil {
+		log.Printf("writing to opened unidirectional stream failed: %v", err)
 	}
 }
