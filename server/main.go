@@ -11,8 +11,10 @@ import (
 	_ "embed"
 	"encoding/base64"
 	"encoding/pem"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"math/big"
 	"net"
@@ -172,7 +174,7 @@ func echoSession(sess *webtransport.Session) {
 		for {
 			stream, err := sess.AcceptStream(ctx)
 			if err != nil {
-				log.Printf("accepting stream failed: %v", err)
+				logAcceptError(ctx, "accepting stream", err)
 				return
 			}
 			log.Printf("accepted bidirectional stream %d", stream.StreamID())
@@ -191,7 +193,7 @@ func echoSession(sess *webtransport.Session) {
 						}
 					}
 					if readErr != nil {
-						log.Printf("reading stream failed: %v", readErr)
+						logReadError("reading stream", readErr)
 						return
 					}
 				}
@@ -203,7 +205,7 @@ func echoSession(sess *webtransport.Session) {
 		for {
 			stream, err := sess.AcceptUniStream(ctx)
 			if err != nil {
-				log.Printf("accepting unidirectional stream failed: %v", err)
+				logAcceptError(ctx, "accepting unidirectional stream", err)
 				return
 			}
 			log.Printf("accepted unidirectional stream %d", stream.StreamID())
@@ -218,7 +220,7 @@ func echoSession(sess *webtransport.Session) {
 						}
 					}
 					if readErr != nil {
-						log.Printf("reading unidirectional stream failed: %v", readErr)
+						logReadError("reading unidirectional stream", readErr)
 						return
 					}
 				}
@@ -236,6 +238,24 @@ func echoSession(sess *webtransport.Session) {
 			return
 		}
 	}
+}
+
+// logAcceptError logs a stream accept failure, unless it is merely the result of the
+// session closing (which happens routinely when a client disconnects at the end of a test).
+func logAcceptError(ctx context.Context, action string, err error) {
+	if ctx.Err() != nil {
+		return
+	}
+	log.Printf("%s failed: %v", action, err)
+}
+
+// logReadError logs a stream read failure, unless it is io.EOF, which just means the
+// peer closed its side of the stream normally after finishing writing.
+func logReadError(action string, err error) {
+	if errors.Is(err, io.EOF) {
+		return
+	}
+	log.Printf("%s failed: %v", action, err)
 }
 
 // openServerStream opens a new server-initiated bidirectional stream in response to an "open" request.

@@ -201,8 +201,7 @@ extension HTTP3ClientConnection {
     func makeBidirectionalStream() async throws -> NIOAsyncChannel<ByteBuffer, ByteBuffer> {
         try await self.h3Handler.eventLoop.flatSubmit {
             self.h3Handler.value.coordinator.streamCreator.createBidirectionalStream { streamInitializer in
-                print("Stream ID: \(streamInitializer.streamID)")
-                return streamInitializer.channel.eventLoop.makeCompletedFuture {
+                streamInitializer.channel.eventLoop.makeCompletedFuture {
                     try NIOAsyncChannel(
                         wrappingChannelSynchronously: streamInitializer.channel,
                         configuration: .init(
@@ -220,8 +219,7 @@ extension HTTP3ClientConnection {
     func makeUnidirectionalStream() async throws -> NIOAsyncChannel<ByteBuffer, ByteBuffer> {
         try await self.h3Handler.eventLoop.flatSubmit {
             self.h3Handler.value.coordinator.streamCreator.createUnidirectionalStream { streamInitializer in
-                print("Stream ID: \(streamInitializer.streamID)")
-                return streamInitializer.channel.eventLoop.makeCompletedFuture {
+                streamInitializer.channel.eventLoop.makeCompletedFuture {
                     try NIOAsyncChannel(
                         wrappingChannelSynchronously: streamInitializer.channel,
                         configuration: .init(
