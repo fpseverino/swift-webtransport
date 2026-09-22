@@ -74,4 +74,19 @@ struct WebTransportConnectionTests {
             }
         }
     }
+
+    @Test("Datagrams")
+    func datagrams() async throws {
+        try await WebTransportConnection.withConnection(
+            ipAddress: "127.0.0.1",
+            port: 6121,
+            configuration: .init(
+                verificationConfiguration: .x509Certificates(trustRootsFilePath: Self.trustRootsFilePath),
+                applicationProtocols: ["webtransport-test", "webtransport-test-2"],
+                urlPath: "/webtransport"
+            )
+        ) { connection in
+            try await connection.sendDatagram(ByteBuffer(string: "Hello, datagrams!"))
+        }
+    }
 }

@@ -15,10 +15,12 @@ func withH3Connection<Value>(
     logger: Logger,
     eventLoopGroup: any EventLoopGroup,
     body: (
+        QUICStreamID,
         NIOAsyncChannelInboundStream<HTTPResponsePart>,
         NIOAsyncChannelOutboundWriter<HTTPRequestPart>,
         HTTP3ClientConnection<Never, NIOQUIC.QUICStreamCreator>,
-        AsyncStream<NIOAsyncChannel<ByteBuffer, ByteBuffer>>
+        AsyncStream<NIOAsyncChannel<ByteBuffer, ByteBuffer>>,
+        any Channel
     ) async throws -> Value
 ) async throws -> Value {
     let (incomingBidirectionalStreams, incomingBidirectionalStreamsContinuation) = AsyncStream<NIOAsyncChannel<ByteBuffer, ByteBuffer>>.makeStream()
@@ -108,12 +110,15 @@ func withH3Connection<Value>(
     }.get()
 
     do {
-        let value = try await h3Connection.makeRequestStream().executeThenClose {
+        let asyncChannel = try await h3Connection.makeRequestStream()
+        let value = try await asyncChannel.executeThenClose {
             try await body(
+                QUICStreamID(rawValue: try await asyncChannel.channel.getOption(.quicStreamID).get()),
                 $0,
                 $1,
                 h3Connection,
-                incomingBidirectionalStreams
+                incomingBidirectionalStreams,
+                connectionChannel
             )
         }
 

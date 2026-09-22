@@ -11,19 +11,27 @@ import RawStructuredFieldValues
 /// A single connection to a WebTransport server.
 public final actor WebTransportConnection: Sendable {
     /// The logger to use for this connection.
-    let logger: Logger
-    let h3Connection: HTTP3ClientConnection<Never, NIOQUIC.QUICStreamCreator>
+    private let logger: Logger
+
+    /// The QUIC Stream ID of the CONNECT stream that established the WebTransport session.
+    private let streamID: QUICStreamID
+    private let h3Connection: HTTP3ClientConnection<Never, NIOQUIC.QUICStreamCreator>
     nonisolated public let incomingBidirectionalStreams: AsyncStream<NIOAsyncChannel<ByteBuffer, ByteBuffer>>
+    private let datagramChannel: any Channel
 
     /// Initializes the WebTransport connection.
     init(
         logger: Logger,
+        streamID: QUICStreamID,
         h3Connection: HTTP3ClientConnection<Never, NIOQUIC.QUICStreamCreator>,
-        incomingBidirectionalStreams: AsyncStream<NIOAsyncChannel<ByteBuffer, ByteBuffer>>
+        incomingBidirectionalStreams: AsyncStream<NIOAsyncChannel<ByteBuffer, ByteBuffer>>,
+        datagramChannel: any Channel
     ) {
         self.logger = logger
+        self.streamID = streamID
         self.h3Connection = h3Connection
         self.incomingBidirectionalStreams = incomingBidirectionalStreams
+        self.datagramChannel = datagramChannel
     }
 
     /// Connect to the WebTransport server and run operations using the connection
@@ -51,7 +59,7 @@ public final actor WebTransportConnection: Sendable {
             verificationConfiguration: configuration.verificationConfiguration,
             logger: logger,
             eventLoopGroup: eventLoopGroup
-        ) { inbound, outbound, h3Connection, incomingBidirectionalStreams in
+        ) { streamID, inbound, outbound, h3Connection, incomingBidirectionalStreams, datagramChannel in
             var headerSerializer = StructuredFieldValueSerializer()
             var connectRequest = HTTPRequest(
                 method: .connect,
@@ -84,8 +92,10 @@ public final actor WebTransportConnection: Sendable {
             return try await operation(
                 WebTransportConnection(
                     logger: logger,
+                    streamID: streamID,
                     h3Connection: h3Connection,
-                    incomingBidirectionalStreams: incomingBidirectionalStreams
+                    incomingBidirectionalStreams: incomingBidirectionalStreams,
+                    datagramChannel: datagramChannel
                 )
             )
         }
@@ -123,5 +133,9 @@ public final actor WebTransportConnection: Sendable {
             try await outboundStream.write(buffer)
             return try await operation(outboundStream)
         }
+    }
+
+    public func sendDatagram(_ payload: ByteBuffer) async throws {
+        try await self.datagramChannel.writeAndFlush(HTTP3Datagram(streamID: self.streamID, payload: payload))
     }
 }
