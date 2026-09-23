@@ -4,30 +4,35 @@ extension WebTransportConnection {
     public struct IncomingBidirectionalStreams: AsyncSequence, Sendable {
         public typealias Element = NIOAsyncChannel<ByteBuffer, ByteBuffer>
 
-        private let stream: AsyncStream<Element>
+        @usableFromInline
+        typealias BaseAsyncSequence = AsyncStream<Element>
+        typealias Continuation = BaseAsyncSequence.Continuation
 
-        init(stream: AsyncStream<Element>) {
-            self.stream = stream
+        @usableFromInline
+        let base: AsyncStream<Element>
+
+        static func makeStream() -> (Self, Self.Continuation) {
+            let (stream, continuation) = BaseAsyncSequence.makeStream()
+            return (.init(base: stream), continuation)
         }
 
         public func makeAsyncIterator() -> AsyncIterator {
-            AsyncIterator(iterator: self.stream.makeAsyncIterator())
+            AsyncIterator(base: self.base.makeAsyncIterator())
         }
 
         public struct AsyncIterator: AsyncIteratorProtocol {
-            private var iterator: AsyncStream<Element>.Iterator
-
-            init(iterator: AsyncStream<Element>.Iterator) {
-                self.iterator = iterator
-            }
+            @usableFromInline
+            var base: BaseAsyncSequence.AsyncIterator
 
             @concurrent
+            @inlinable
             public mutating func next() async -> Element? {
-                await self.iterator.next()
+                await self.base.next()
             }
 
-            public mutating func next(isolation actor: isolated (any Actor)?) async throws -> Element? {
-                await self.iterator.next(isolation: actor)
+            @inlinable
+            public mutating func next(isolation actor: isolated (any Actor)?) async -> Element? {
+                await self.base.next(isolation: actor)
             }
         }
     }

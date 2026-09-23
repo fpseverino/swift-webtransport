@@ -63,7 +63,7 @@ struct WebTransportConnectionTests {
                 try await outbound.write(ByteBuffer(string: "open"))
             }
 
-            for await stream in connection.incomingBidirectionalStreams {
+            for await stream in await connection.incomingBidirectionalStreams {
                 try await stream.executeThenClose { inbound, outbound in
                     for try await message in inbound {
                         print("Received incoming stream message: \(String(buffer: message))")

@@ -19,11 +19,11 @@ func withH3Connection<Value>(
         NIOAsyncChannelInboundStream<HTTPResponsePart>,
         NIOAsyncChannelOutboundWriter<HTTPRequestPart>,
         HTTP3ClientConnection<Never, NIOQUIC.QUICStreamCreator>,
-        AsyncStream<NIOAsyncChannel<ByteBuffer, ByteBuffer>>,
+        WebTransportConnection.IncomingBidirectionalStreams,
         any Channel
     ) async throws -> Value
 ) async throws -> Value {
-    let (incomingBidirectionalStreams, incomingBidirectionalStreamsContinuation) = AsyncStream<NIOAsyncChannel<ByteBuffer, ByteBuffer>>.makeStream()
+    let (incomingBidirectionalStreams, incomingBidirectionalStreamsContinuation) = WebTransportConnection.IncomingBidirectionalStreams.makeStream()
     let (quicChannel, connectionCreator) = try await DatagramBootstrap(group: eventLoopGroup)
         .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
         .bind(host: "127.0.0.1", port: 0) { channel in

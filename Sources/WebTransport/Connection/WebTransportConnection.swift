@@ -16,7 +16,7 @@ public final actor WebTransportConnection: Sendable {
     /// The QUIC Stream ID of the CONNECT stream that established the WebTransport session.
     private let streamID: QUICStreamID
     private let h3Connection: HTTP3ClientConnection<Never, NIOQUIC.QUICStreamCreator>
-    nonisolated public let incomingBidirectionalStreams: AsyncStream<NIOAsyncChannel<ByteBuffer, ByteBuffer>>
+    public let incomingBidirectionalStreams: IncomingBidirectionalStreams
     private let datagramChannel: any Channel
 
     /// Initializes the WebTransport connection.
@@ -24,7 +24,7 @@ public final actor WebTransportConnection: Sendable {
         logger: Logger,
         streamID: QUICStreamID,
         h3Connection: HTTP3ClientConnection<Never, NIOQUIC.QUICStreamCreator>,
-        incomingBidirectionalStreams: AsyncStream<NIOAsyncChannel<ByteBuffer, ByteBuffer>>,
+        incomingBidirectionalStreams: IncomingBidirectionalStreams,
         datagramChannel: any Channel
     ) {
         self.logger = logger
