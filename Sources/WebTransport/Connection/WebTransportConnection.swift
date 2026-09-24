@@ -16,6 +16,7 @@ public final actor WebTransportConnection: Sendable {
     /// The QUIC Stream ID of the CONNECT stream that established the WebTransport session.
     private let streamID: QUICStreamID
     private let h3Connection: HTTP3ClientConnection<Never, NIOQUIC.QUICStreamCreator>
+    public let incomingUnidirectionalStreams: IncomingUnidirectionalStreams
     public let incomingBidirectionalStreams: IncomingBidirectionalStreams
     private let datagramChannel: any Channel
 
@@ -24,12 +25,14 @@ public final actor WebTransportConnection: Sendable {
         logger: Logger,
         streamID: QUICStreamID,
         h3Connection: HTTP3ClientConnection<Never, NIOQUIC.QUICStreamCreator>,
+        incomingUnidirectionalStreams: IncomingUnidirectionalStreams,
         incomingBidirectionalStreams: IncomingBidirectionalStreams,
         datagramChannel: any Channel
     ) {
         self.logger = logger
         self.streamID = streamID
         self.h3Connection = h3Connection
+        self.incomingUnidirectionalStreams = incomingUnidirectionalStreams
         self.incomingBidirectionalStreams = incomingBidirectionalStreams
         self.datagramChannel = datagramChannel
     }
@@ -59,7 +62,7 @@ public final actor WebTransportConnection: Sendable {
             verificationConfiguration: configuration.verificationConfiguration,
             logger: logger,
             eventLoopGroup: eventLoopGroup
-        ) { streamID, inbound, outbound, h3Connection, incomingBidirectionalStreams, datagramChannel in
+        ) { streamID, inbound, outbound, h3Connection, incomingUnidirectionalStreams, incomingBidirectionalStreams, datagramChannel in
             var headerSerializer = StructuredFieldValueSerializer()
             var connectRequest = HTTPRequest(
                 method: .connect,
@@ -94,27 +97,11 @@ public final actor WebTransportConnection: Sendable {
                     logger: logger,
                     streamID: streamID,
                     h3Connection: h3Connection,
+                    incomingUnidirectionalStreams: incomingUnidirectionalStreams,
                     incomingBidirectionalStreams: incomingBidirectionalStreams,
                     datagramChannel: datagramChannel
                 )
             )
-        }
-    }
-
-    /// Open a bidirectional stream that can be used to read from and write to the server.
-    ///
-    /// - Parameter operation: The closure where reading and writing operations are performed.
-    ///
-    /// - Returns: The value returned by the `operation` closure.
-    public func withBidirectionalStream<Value>(
-        operation: (NIOAsyncChannelInboundStream<ByteBuffer>, NIOAsyncChannelOutboundWriter<ByteBuffer>) async throws -> Value
-    ) async throws -> Value {
-        try await self.h3Connection.makeBidirectionalStream().executeThenClose { inboundStream, outboundStream in
-            var buffer = ByteBuffer()
-            buffer.writeEncodedInteger(0x41, strategy: .quic)
-            buffer.writeEncodedInteger(0x00, strategy: .quic)
-            try await outboundStream.write(buffer)
-            return try await operation(inboundStream, outboundStream)
         }
     }
 
@@ -132,6 +119,23 @@ public final actor WebTransportConnection: Sendable {
             buffer.writeEncodedInteger(0x00, strategy: .quic)
             try await outboundStream.write(buffer)
             return try await operation(outboundStream)
+        }
+    }
+
+    /// Open a bidirectional stream that can be used to read from and write to the server.
+    ///
+    /// - Parameter operation: The closure where reading and writing operations are performed.
+    ///
+    /// - Returns: The value returned by the `operation` closure.
+    public func withBidirectionalStream<Value>(
+        operation: (NIOAsyncChannelInboundStream<ByteBuffer>, NIOAsyncChannelOutboundWriter<ByteBuffer>) async throws -> Value
+    ) async throws -> Value {
+        try await self.h3Connection.makeBidirectionalStream().executeThenClose { inboundStream, outboundStream in
+            var buffer = ByteBuffer()
+            buffer.writeEncodedInteger(0x41, strategy: .quic)
+            buffer.writeEncodedInteger(0x00, strategy: .quic)
+            try await outboundStream.write(buffer)
+            return try await operation(inboundStream, outboundStream)
         }
     }
 

@@ -19,10 +19,12 @@ func withH3Connection<Value>(
         NIOAsyncChannelInboundStream<HTTPResponsePart>,
         NIOAsyncChannelOutboundWriter<HTTPRequestPart>,
         HTTP3ClientConnection<Never, NIOQUIC.QUICStreamCreator>,
+        WebTransportConnection.IncomingUnidirectionalStreams,
         WebTransportConnection.IncomingBidirectionalStreams,
         any Channel
     ) async throws -> Value
 ) async throws -> Value {
+    let (incomingUnidirectionalStreams, incomingUnidirectionalStreamsContinuation) = WebTransportConnection.IncomingUnidirectionalStreams.makeStream()
     let (incomingBidirectionalStreams, incomingBidirectionalStreamsContinuation) = WebTransportConnection.IncomingBidirectionalStreams.makeStream()
     let (quicChannel, connectionCreator) = try await DatagramBootstrap(group: eventLoopGroup)
         .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
@@ -50,7 +52,22 @@ func withH3Connection<Value>(
                                 settings: HTTP3Settings(h3Datagram: true),
                                 streamCreator: streamCreator,
                                 logger: logger,
-                                inboundPushStreamInitializer: { _ in fatalError() }
+                                inboundPushStreamInitializer: { _ in fatalError() },
+                                internalInboundStreamInitializer: { streamChannel, _, streamType in
+                                    guard
+                                        case .unknown(let raw) = streamType,
+                                        raw == 0x54
+                                    else {
+                                        return streamChannel.eventLoop.makeSucceededVoidFuture()
+                                    }
+                                    incomingUnidirectionalStreamsContinuation.yield(
+                                        try! NIOAsyncChannel<ByteBuffer, Never>(
+                                            wrappingChannelSynchronously: streamChannel,
+                                            configuration: .init(isOutboundHalfClosureEnabled: true)
+                                        )
+                                    )
+                                    return streamChannel.eventLoop.makeSucceededVoidFuture()
+                                }
                             )
                             try connectionChannel.pipeline.syncOperations.addHandler(h3Handler)
                             return connectionChannel
@@ -64,8 +81,10 @@ func withH3Connection<Value>(
                                 try! streamChannel.getOption(.quicStreamID).wait()
                             }
                         switch QUICStreamID(rawValue: quicStreamID).type {
-                        case .clientInitiatedBidirectional, .clientInitiatedUnidirectional:
+                        case .clientInitiatedUnidirectional, .clientInitiatedBidirectional:
                             break
+                        case .serverInitiatedUnidirectional:
+                            break  // TODO: Handle incoming unidirectional streams
                         case .serverInitiatedBidirectional:
                             incomingBidirectionalStreamsContinuation.yield(
                                 try! NIOAsyncChannel<ByteBuffer, ByteBuffer>(
@@ -74,8 +93,6 @@ func withH3Connection<Value>(
                                 )
                             )
                             return streamChannel.eventLoop.makeSucceededVoidFuture()
-                        case .serverInitiatedUnidirectional:
-                            break  // TODO: Handle incoming unidirectional streams
                         }
                         return streamChannel.parent!.pipeline.handler(type: HTTP3ConnectionHandler<NIOQUIC.QUICStreamCreator>.self)
                             .flatMap { http3Handler in
@@ -117,6 +134,7 @@ func withH3Connection<Value>(
                 $0,
                 $1,
                 h3Connection,
+                incomingUnidirectionalStreams,
                 incomingBidirectionalStreams,
                 connectionChannel
             )
@@ -143,7 +161,7 @@ func withH3Connection<Value>(
 }
 
 struct TestHTTP3SingleConnectionCreator: HTTP3ConnectionCreator {
-    let quicHandler: QUICHandler
+    let quicHandler: QUICHandler<QUICStreamChannels>
     let connectionInitializer: @Sendable (any Channel, NIOQUIC.QUICStreamCreator) -> EventLoopFuture<any Channel>
     let inboundStreamInitializer: @Sendable (any Channel) -> EventLoopFuture<Void>
 
@@ -198,15 +216,15 @@ extension HTTP3ClientConnection {
     }
 
     /// > Note: This requires changes in NIOHTTP3 to expose the `streamCreator`.
-    func makeBidirectionalStream() async throws -> NIOAsyncChannel<ByteBuffer, ByteBuffer> {
+    func makeUnidirectionalStream() async throws -> NIOAsyncChannel<Never, ByteBuffer> {
         try await self.h3Handler.eventLoop.flatSubmit {
-            self.h3Handler.value.coordinator.streamCreator.createBidirectionalStream { streamInitializer in
+            self.h3Handler.value.coordinator.streamCreator.createUnidirectionalStream { streamInitializer in
                 streamInitializer.channel.eventLoop.makeCompletedFuture {
                     try NIOAsyncChannel(
                         wrappingChannelSynchronously: streamInitializer.channel,
                         configuration: .init(
                             isOutboundHalfClosureEnabled: true,
-                            inboundType: ByteBuffer.self,
+                            inboundType: Never.self,
                             outboundType: ByteBuffer.self
                         )
                     )
@@ -216,9 +234,9 @@ extension HTTP3ClientConnection {
     }
 
     /// > Note: This requires changes in NIOHTTP3 to expose the `streamCreator`.
-    func makeUnidirectionalStream() async throws -> NIOAsyncChannel<ByteBuffer, ByteBuffer> {
+    func makeBidirectionalStream() async throws -> NIOAsyncChannel<ByteBuffer, ByteBuffer> {
         try await self.h3Handler.eventLoop.flatSubmit {
-            self.h3Handler.value.coordinator.streamCreator.createUnidirectionalStream { streamInitializer in
+            self.h3Handler.value.coordinator.streamCreator.createBidirectionalStream { streamInitializer in
                 streamInitializer.channel.eventLoop.makeCompletedFuture {
                     try NIOAsyncChannel(
                         wrappingChannelSynchronously: streamInitializer.channel,

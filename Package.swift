@@ -13,15 +13,16 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-http-types.git", from: "1.8.0"),
         .package(url: "https://github.com/apple/swift-http-structured-headers.git", from: "1.2.0"),
         // NIO
-        .package(url: "https://github.com/apple/swift-nio.git", from: "2.102.0"),
-        .package(url: "https://github.com/apple/swift-nio-extras.git", from: "1.35.1"),
+        .package(url: "https://github.com/apple/swift-nio.git", from: "2.103.0"),
+        .package(url: "https://github.com/apple/swift-nio-extras.git", from: "1.22.0"),
         // This fork publicly exposes the `QUICStreamCreator` of the `HTTP3ClientConnection`,
         // so we can create QUIC streams for WebTransport from the connection after the HTTP/3 handshake.
+        // It also ignores errors and exposes the APIs needed for WebTransport incoming unidirectional streams.
         .package(url: "https://github.com/fpseverino/swift-nio-http3.git", branch: "webtransport"),
-        .package(url: "https://github.com/apple/swift-nio-quic.git", .upToNextMinor(from: "0.2.0")),
-        .package(url: "https://github.com/apple/swift-nio-quic-helpers.git", .upToNextMinor(from: "0.1.0")),
+        .package(url: "https://github.com/apple/swift-nio-quic.git", branch: "main"),
+        .package(url: "https://github.com/apple/swift-nio-quic-helpers.git", .upToNextMinor(from: "0.1.1")),
         // Observability
-        .package(url: "https://github.com/apple/swift-log.git", from: "1.15.0"),
+        .package(url: "https://github.com/apple/swift-log.git", from: "1.14.0"),
     ],
     targets: [
         .target(

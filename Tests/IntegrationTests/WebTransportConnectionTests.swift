@@ -28,6 +28,10 @@ struct WebTransportConnectionTests {
                 urlPath: "/webtransport"
             )
         ) { connection in
+            try await connection.withUnidirectionalStream { outbound in
+                try await outbound.write(ByteBuffer(string: "Hello, WebTransport!"))
+            }
+
             try await connection.withBidirectionalStream { inbound, outbound in
                 try await outbound.write(ByteBuffer(string: "Hello from client!"))
                 var inboundStreamIterator = inbound.makeAsyncIterator()
@@ -59,6 +63,20 @@ struct WebTransportConnectionTests {
                 urlPath: "/webtransport"
             )
         ) { connection in
+            try await connection.withUnidirectionalStream { outbound in
+                try await outbound.write(ByteBuffer(string: "open"))
+            }
+
+            for await stream in await connection.incomingUnidirectionalStreams {
+                try await stream.executeThenClose { inbound in
+                    for try await message in inbound {
+                        print("Received incoming stream message: \(String(buffer: message))")
+                        break
+                    }
+                }
+                break
+            }
+
             try await connection.withBidirectionalStream { inbound, outbound in
                 try await outbound.write(ByteBuffer(string: "open"))
             }
