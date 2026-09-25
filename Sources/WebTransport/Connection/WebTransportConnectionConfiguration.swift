@@ -1,5 +1,6 @@
 public import NIOQUIC
 
+/// A configuration object that defines how to connect to a WebTransport server.
 public struct WebTransportConnectionConfiguration: Sendable {
     /// Information required to verify the server identity.
     public var verificationConfiguration: VerificationConfiguration

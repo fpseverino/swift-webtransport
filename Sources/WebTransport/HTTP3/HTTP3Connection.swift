@@ -8,12 +8,25 @@ import NIOPosix
 import NIOQUIC
 import NIOQUICHelpers
 
+/// Connect to an HTTP/3 server,
+/// run the provided closure passing to it all the necessary objects for a WebTransport session,
+/// and then automatically close the connection.
+///
+/// - Parameters:
+///   - ipAddress: The IP address of the HTTP/3 server (that also supports WebTransport).
+///   - port: The port of the HTTP/3 server.
+///   - verificationConfiguration: Information required to verify the server identity.
+///   - eventLoopGroup: The `EventLoopGroup` to run the connection on.
+///   - logger: The logger to use for the connection.
+///   - body: The closure where WebTransport operations using all the necessary objects are performed.
+///
+/// - Returns: The value returned by the `body` closure.
 func withH3Connection<Value>(
     ipAddress: String,
     port: Int,
     verificationConfiguration: VerificationConfiguration,
-    logger: Logger,
     eventLoopGroup: any EventLoopGroup,
+    logger: Logger,
     body: (
         QUICStreamID,
         NIOAsyncChannelInboundStream<HTTPResponsePart>,
@@ -201,7 +214,7 @@ final class ConnectionChannelState: @unchecked Sendable {
 extension HTTP3ClientConnection {
     /// Opens a single request stream on this connection wrapped in a `NIOAsyncChannel`.
     /// The stream is closed by the caller using `executeThenClose`.
-    func makeRequestStream() async throws -> NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart> {
+    fileprivate func makeRequestStream() async throws -> NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart> {
         try await self.concurrencyView.createRequestStream {
             let streamChannel = $0.channel
             return streamChannel.eventLoop.makeCompletedFuture {

@@ -13,31 +13,40 @@ public final actor WebTransportConnection: Sendable {
     /// The logger to use for this connection.
     private let logger: Logger
 
-    /// The QUIC Stream ID of the CONNECT stream that established the WebTransport session.
-    private let streamID: QUICStreamID
+    /// The QUIC stream ID of the CONNECT stream that established the WebTransport session.
+    private let sessionID: QUICStreamID
+
+    /// Used to open QUIC streams
     private let h3Connection: HTTP3ClientConnection<Never, NIOQUIC.QUICStreamCreator>
+
+    /// An asynchronous sequence of unidirectional streams opened by the server.
+    /// Each one can be used to read data from the server.
     public let incomingUnidirectionalStreams: IncomingUnidirectionalStreams
+
+    /// An asynchronous sequence of bidirectional streams opened by the server.
+    /// Each one can be used to read data from the server and write data back to it.
     public let incomingBidirectionalStreams: IncomingBidirectionalStreams
+
+    /// The channel used for sending HTTP Datagrams
     private let datagramChannel: any Channel
 
-    /// Initializes the WebTransport connection.
     init(
         logger: Logger,
-        streamID: QUICStreamID,
+        sessionID: QUICStreamID,
         h3Connection: HTTP3ClientConnection<Never, NIOQUIC.QUICStreamCreator>,
         incomingUnidirectionalStreams: IncomingUnidirectionalStreams,
         incomingBidirectionalStreams: IncomingBidirectionalStreams,
         datagramChannel: any Channel
     ) {
         self.logger = logger
-        self.streamID = streamID
+        self.sessionID = sessionID
         self.h3Connection = h3Connection
         self.incomingUnidirectionalStreams = incomingUnidirectionalStreams
         self.incomingBidirectionalStreams = incomingBidirectionalStreams
         self.datagramChannel = datagramChannel
     }
 
-    /// Connect to the WebTransport server and run operations using the connection
+    /// Connect to the WebTransport server and run operations using the connection, then automatically close the connection.
     ///
     /// - Parameters:
     ///   - ipAddress: The IP address of the WebTransport server.
@@ -60,9 +69,9 @@ public final actor WebTransportConnection: Sendable {
             ipAddress: ipAddress,
             port: port,
             verificationConfiguration: configuration.verificationConfiguration,
-            logger: logger,
-            eventLoopGroup: eventLoopGroup
-        ) { streamID, inbound, outbound, h3Connection, incomingUnidirectionalStreams, incomingBidirectionalStreams, datagramChannel in
+            eventLoopGroup: eventLoopGroup,
+            logger: logger
+        ) { sessionID, responseReader, requestWriter, h3Connection, incomingUnidirectionalStreams, incomingBidirectionalStreams, datagramChannel in
             var headerSerializer = StructuredFieldValueSerializer()
             var connectRequest = HTTPRequest(
                 method: .connect,
@@ -83,13 +92,13 @@ public final actor WebTransportConnection: Sendable {
             // TODO: this isn't set to "webtransport-h3" to support servers that haven't implemented newer drafts of the WebTransport protocol.
             // https://github.com/BiagioFesta/wtransport/issues/328
             connectRequest.extendedConnectProtocol = "webtransport"
-            try await outbound.write(.head(connectRequest))
+            try await requestWriter.write(.head(connectRequest))
 
-            var responseIterator = inbound.makeAsyncIterator()
+            var responseIterator = responseReader.makeAsyncIterator()
             guard
                 let headResponsePart = try await responseIterator.next(),
                 case .head(let response) = headResponsePart,
-                response.status == .ok
+                response.status.kind == .successful
             else {
                 throw WebTransportError.serverRejectedSession
             }
@@ -97,7 +106,7 @@ public final actor WebTransportConnection: Sendable {
             return try await operation(
                 WebTransportConnection(
                     logger: logger,
-                    streamID: streamID,
+                    sessionID: sessionID,
                     h3Connection: h3Connection,
                     incomingUnidirectionalStreams: incomingUnidirectionalStreams,
                     incomingBidirectionalStreams: incomingBidirectionalStreams,
@@ -118,7 +127,7 @@ public final actor WebTransportConnection: Sendable {
         try await self.h3Connection.makeUnidirectionalStream().executeThenClose { _, outboundStream in
             var buffer = ByteBuffer()
             buffer.writeEncodedInteger(0x54, strategy: .quic)
-            buffer.writeEncodedInteger(0x00, strategy: .quic)
+            buffer.writeEncodedInteger(self.sessionID.rawValue, strategy: .quic)
             try await outboundStream.write(buffer)
             return try await operation(outboundStream)
         }
@@ -135,13 +144,16 @@ public final actor WebTransportConnection: Sendable {
         try await self.h3Connection.makeBidirectionalStream().executeThenClose { inboundStream, outboundStream in
             var buffer = ByteBuffer()
             buffer.writeEncodedInteger(0x41, strategy: .quic)
-            buffer.writeEncodedInteger(0x00, strategy: .quic)
+            buffer.writeEncodedInteger(self.sessionID.rawValue, strategy: .quic)
             try await outboundStream.write(buffer)
             return try await operation(inboundStream, outboundStream)
         }
     }
 
+    /// Send a datagram to the server.
+    ///
+    /// - Parameter payload: The datagram payload to send.
     public func sendDatagram(_ payload: ByteBuffer) async throws {
-        try await self.datagramChannel.writeAndFlush(HTTP3Datagram(streamID: self.streamID, payload: payload))
+        try await self.datagramChannel.writeAndFlush(HTTP3Datagram(streamID: self.sessionID, payload: payload))
     }
 }

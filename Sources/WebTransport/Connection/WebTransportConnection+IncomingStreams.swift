@@ -1,6 +1,8 @@
 public import NIOCore
 
 extension WebTransportConnection {
+    /// An asynchronous sequence of unidirectional streams opened by the server.
+    /// Each one can be used to read data from the server.
     public struct IncomingUnidirectionalStreams: AsyncSequence, Sendable {
         public typealias Element = NIOAsyncChannel<ByteBuffer, Never>
 
@@ -42,6 +44,8 @@ extension WebTransportConnection {
 extension WebTransportConnection.IncomingUnidirectionalStreams.AsyncIterator: Sendable {}
 
 extension WebTransportConnection {
+    /// An asynchronous sequence of bidirectional streams opened by the server.
+    /// Each one can be used to read data from the server and write data back to it.
     public struct IncomingBidirectionalStreams: AsyncSequence, Sendable {
         public typealias Element = NIOAsyncChannel<ByteBuffer, ByteBuffer>
 
