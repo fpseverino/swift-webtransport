@@ -2,11 +2,15 @@
 
 ### Testing
 
-The project tests expect the WebTransport Go server in the `/server` directory to be running.
-You can start it by running the command:
+The project tests expect the WebTransport Go server in the `/go-server` directory and the Rust server in the `/rust-server` directory to be running.
+You can start them by running the commands:
 
 ```sh
-cd server && go run .
+cd go-server && go run .
+```
+
+```sh
+cd rust-server && cargo run
 ```
 
 ### Formatting

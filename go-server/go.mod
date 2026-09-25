@@ -1,9 +1,9 @@
-module github.com/francescopaoloseverino/swift-webtransport/server
+module github.com/francescopaoloseverino/swift-webtransport/go-server
 
 go 1.27.1
 
 require (
-	github.com/quic-go/quic-go v0.62.0
+	github.com/quic-go/quic-go v0.63.0
 	github.com/quic-go/webtransport-go v0.13.0
 )
 

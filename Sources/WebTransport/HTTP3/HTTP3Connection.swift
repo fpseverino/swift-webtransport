@@ -81,10 +81,6 @@ func withH3Connection<Value>(
                                 try! streamChannel.getOption(.quicStreamID).wait()
                             }
                         switch QUICStreamID(rawValue: quicStreamID).type {
-                        case .clientInitiatedUnidirectional, .clientInitiatedBidirectional:
-                            break
-                        case .serverInitiatedUnidirectional:
-                            break  // TODO: Handle incoming unidirectional streams
                         case .serverInitiatedBidirectional:
                             incomingBidirectionalStreamsContinuation.yield(
                                 try! NIOAsyncChannel<ByteBuffer, ByteBuffer>(
@@ -93,6 +89,8 @@ func withH3Connection<Value>(
                                 )
                             )
                             return streamChannel.eventLoop.makeSucceededVoidFuture()
+                        case .serverInitiatedUnidirectional, .clientInitiatedUnidirectional, .clientInitiatedBidirectional:
+                            break
                         }
                         return streamChannel.parent!.pipeline.handler(type: HTTP3ConnectionHandler<NIOQUIC.QUICStreamCreator>.self)
                             .flatMap { http3Handler in

@@ -80,7 +80,9 @@ public final actor WebTransportConnection: Sendable {
                     )
                 ])
             )
-            connectRequest.extendedConnectProtocol = "webtransport-h3"
+            // TODO: this isn't set to "webtransport-h3" to support servers that haven't implemented newer drafts of the WebTransport protocol.
+            // https://github.com/BiagioFesta/wtransport/issues/328
+            connectRequest.extendedConnectProtocol = "webtransport"
             try await outbound.write(.head(connectRequest))
 
             var responseIterator = inbound.makeAsyncIterator()

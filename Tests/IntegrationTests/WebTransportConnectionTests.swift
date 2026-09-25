@@ -9,21 +9,13 @@ import Testing
 
 @Suite("WebTransportConnection Tests")
 struct WebTransportConnectionTests {
-    /// Points to the PEM written by `server/main.go` (run with `go run . -cert-out=<path>` if moved).
-    static let trustRootsFilePath = URL(filePath: #filePath)
-        .deletingLastPathComponent()
-        .deletingLastPathComponent()
-        .deletingLastPathComponent()
-        .appending(path: "server/cert.pem")
-        .path()
-
-    @Test("Open Streams")
-    func openStreams() async throws {
+    @Test("Open Streams", arguments: TestWTServer.allCases)
+    func openStreams(server: TestWTServer) async throws {
         try await WebTransportConnection.withConnection(
             ipAddress: "127.0.0.1",
-            port: 6121,
+            port: server.port,
             configuration: .init(
-                verificationConfiguration: .x509Certificates(trustRootsFilePath: Self.trustRootsFilePath),
+                verificationConfiguration: .x509Certificates(trustRootsFilePath: server.trustRootsFilePath),
                 applicationProtocols: ["webtransport-test", "webtransport-test-2"],
                 urlPath: "/webtransport"
             )
@@ -52,13 +44,13 @@ struct WebTransportConnectionTests {
         }
     }
 
-    @Test("Incoming Streams")
-    func incomingStreams() async throws {
+    @Test("Incoming Streams", arguments: TestWTServer.allCases)
+    func incomingStreams(server: TestWTServer) async throws {
         try await WebTransportConnection.withConnection(
             ipAddress: "127.0.0.1",
-            port: 6121,
+            port: server.port,
             configuration: .init(
-                verificationConfiguration: .x509Certificates(trustRootsFilePath: Self.trustRootsFilePath),
+                verificationConfiguration: .x509Certificates(trustRootsFilePath: server.trustRootsFilePath),
                 applicationProtocols: ["webtransport-test", "webtransport-test-2"],
                 urlPath: "/webtransport"
             )
@@ -93,13 +85,13 @@ struct WebTransportConnectionTests {
         }
     }
 
-    @Test("Datagrams")
-    func datagrams() async throws {
+    @Test("Datagrams", arguments: TestWTServer.allCases)
+    func datagrams(server: TestWTServer) async throws {
         try await WebTransportConnection.withConnection(
             ipAddress: "127.0.0.1",
-            port: 6121,
+            port: server.port,
             configuration: .init(
-                verificationConfiguration: .x509Certificates(trustRootsFilePath: Self.trustRootsFilePath),
+                verificationConfiguration: .x509Certificates(trustRootsFilePath: server.trustRootsFilePath),
                 applicationProtocols: ["webtransport-test", "webtransport-test-2"],
                 urlPath: "/webtransport"
             )
@@ -107,4 +99,29 @@ struct WebTransportConnectionTests {
             try await connection.sendDatagram(ByteBuffer(string: "Hello, datagrams!"))
         }
     }
+}
+
+enum TestWTServer: CaseIterable {
+    case go
+    case rust
+
+    var port: Int {
+        switch self {
+        case .go: 6121
+        case .rust: 4433
+        }
+    }
+
+    /// Points to default location of the PEM file written by the server.
+    var trustRootsFilePath: String {
+        switch self {
+        case .go: Self.baseURL.appending(path: "go-server/cert.pem").path()
+        case .rust: Self.baseURL.appending(path: "rust-server/cert.pem").path()
+        }
+    }
+
+    static let baseURL = URL(filePath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
 }

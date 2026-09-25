@@ -8,4 +8,7 @@ DerivedData/
 .netrc
 Package.resolved
 
-/server/cert.pem
+/go-server/cert.pem
+
+/rust-server/target
+/rust-server/cert.pem
