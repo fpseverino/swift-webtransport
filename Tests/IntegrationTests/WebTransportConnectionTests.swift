@@ -1,6 +1,7 @@
 import Foundation
 import HTTPTypes
 import NIOCore
+import NIOHTTP3
 import NIOHTTPTypes
 import NIOQUIC
 import Testing
@@ -97,6 +98,11 @@ struct WebTransportConnectionTests {
             )
         ) { connection in
             try await connection.sendDatagram(ByteBuffer(string: "Hello, datagrams!"))
+
+            for await datagram in await connection.incomingDatagrams {
+                print("Received incoming datagram: \(String(buffer: datagram.payload))")
+                break
+            }
         }
     }
 }

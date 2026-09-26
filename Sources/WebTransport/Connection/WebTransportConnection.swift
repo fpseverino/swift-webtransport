@@ -1,7 +1,7 @@
 import HTTPTypes
 public import Logging
 public import NIOCore
-@_spi(HTTP3AsyncInterface) import NIOHTTP3
+@_spi(HTTP3AsyncInterface) public import NIOHTTP3
 import NIOHTTPTypes
 public import NIOPosix
 import NIOQUIC
@@ -16,7 +16,7 @@ public final actor WebTransportConnection: Sendable {
     /// The QUIC stream ID of the CONNECT stream that established the WebTransport session.
     private let sessionID: QUICStreamID
 
-    /// Used to open QUIC streams
+    /// Used to open QUIC unidirectional and bidirectional streams
     private let h3Connection: HTTP3ClientConnection<Never, NIOQUIC.QUICStreamCreator>
 
     /// An asynchronous sequence of unidirectional streams opened by the server.
@@ -30,13 +30,17 @@ public final actor WebTransportConnection: Sendable {
     /// The channel used for sending HTTP Datagrams
     private let datagramChannel: any Channel
 
+    /// An asynchronous sequence of incoming datagrams
+    public let incomingDatagrams: AsyncStream<HTTP3Datagram>
+
     init(
         logger: Logger,
         sessionID: QUICStreamID,
         h3Connection: HTTP3ClientConnection<Never, NIOQUIC.QUICStreamCreator>,
         incomingUnidirectionalStreams: IncomingUnidirectionalStreams,
         incomingBidirectionalStreams: IncomingBidirectionalStreams,
-        datagramChannel: any Channel
+        datagramChannel: any Channel,
+        incomingDatagrams: AsyncStream<HTTP3Datagram>
     ) {
         self.logger = logger
         self.sessionID = sessionID
@@ -44,6 +48,7 @@ public final actor WebTransportConnection: Sendable {
         self.incomingUnidirectionalStreams = incomingUnidirectionalStreams
         self.incomingBidirectionalStreams = incomingBidirectionalStreams
         self.datagramChannel = datagramChannel
+        self.incomingDatagrams = incomingDatagrams
     }
 
     /// Connect to the WebTransport server and run operations using the connection, then automatically close the connection.
@@ -71,7 +76,16 @@ public final actor WebTransportConnection: Sendable {
             verificationConfiguration: configuration.verificationConfiguration,
             eventLoopGroup: eventLoopGroup,
             logger: logger
-        ) { sessionID, responseReader, requestWriter, h3Connection, incomingUnidirectionalStreams, incomingBidirectionalStreams, datagramChannel in
+        ) {
+            sessionID,
+            responseReader,
+            requestWriter,
+            h3Connection,
+            incomingUnidirectionalStreams,
+            incomingBidirectionalStreams,
+            datagramChannel,
+            incomingDatagrams
+            in
             var headerSerializer = StructuredFieldValueSerializer()
             var connectRequest = HTTPRequest(
                 method: .connect,
@@ -110,7 +124,8 @@ public final actor WebTransportConnection: Sendable {
                     h3Connection: h3Connection,
                     incomingUnidirectionalStreams: incomingUnidirectionalStreams,
                     incomingBidirectionalStreams: incomingBidirectionalStreams,
-                    datagramChannel: datagramChannel
+                    datagramChannel: datagramChannel,
+                    incomingDatagrams: incomingDatagrams
                 )
             )
         }

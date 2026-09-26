@@ -34,11 +34,14 @@ func withH3Connection<Value>(
         HTTP3ClientConnection<Never, NIOQUIC.QUICStreamCreator>,
         WebTransportConnection.IncomingUnidirectionalStreams,
         WebTransportConnection.IncomingBidirectionalStreams,
-        any Channel
+        any Channel,
+        AsyncStream<HTTP3Datagram>
     ) async throws -> Value
 ) async throws -> Value {
     let (incomingUnidirectionalStreams, incomingUnidirectionalStreamsContinuation) = WebTransportConnection.IncomingUnidirectionalStreams.makeStream()
     let (incomingBidirectionalStreams, incomingBidirectionalStreamsContinuation) = WebTransportConnection.IncomingBidirectionalStreams.makeStream()
+    let (incomingDatagrams, incomingDatagramsContinuation) = AsyncStream<HTTP3Datagram>.makeStream()
+
     let (quicChannel, connectionCreator) = try await DatagramBootstrap(group: eventLoopGroup)
         .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
         .bind(host: "127.0.0.1", port: 0) { channel in
@@ -83,6 +86,9 @@ func withH3Connection<Value>(
                                 }
                             )
                             try connectionChannel.pipeline.syncOperations.addHandler(h3Handler)
+                            try connectionChannel.pipeline.syncOperations.addHandler(
+                                IncomingDatagramsChannelHandler(incomingDatagramsContinuation: incomingDatagramsContinuation)
+                            )
                             return connectionChannel
                         }
                     },
@@ -110,7 +116,7 @@ func withH3Connection<Value>(
                                 http3Handler.inboundStreamReceived(streamChannel)
                             }
                     },
-                    connectionState: ConnectionChannelState()
+                    connectionChannelPromise: channel.eventLoop.makePromise()
                 )
                 return (channel, NIOLoopBound(connectionCreator, eventLoop: channel.eventLoop))
             }
@@ -130,11 +136,8 @@ func withH3Connection<Value>(
         inboundPushStreamInitializer: { _ in fatalError("Push streams not supported") }
     )
 
-    let connectionChannel = try await quicChannel.eventLoop.flatSubmit { () -> EventLoopFuture<any Channel> in
-        guard let connectionChannelFuture = connectionCreator.value.connectionState.future else {
-            return quicChannel.eventLoop.makeFailedFuture(ChannelError.operationUnsupported)
-        }
-        return connectionChannelFuture
+    let connectionChannel = try await quicChannel.eventLoop.flatSubmit {
+        connectionCreator.value.connectionChannelPromise.futureResult
     }.get()
 
     do {
@@ -147,7 +150,8 @@ func withH3Connection<Value>(
                 h3Connection,
                 incomingUnidirectionalStreams,
                 incomingBidirectionalStreams,
-                connectionChannel
+                connectionChannel,
+                incomingDatagrams
             )
         }
 
@@ -177,7 +181,7 @@ struct TestHTTP3SingleConnectionCreator: HTTP3ConnectionCreator {
     let inboundStreamInitializer: @Sendable (any Channel) -> EventLoopFuture<Void>
 
     var connectionEstablished: Bool = false
-    let connectionState: ConnectionChannelState
+    let connectionChannelPromise: EventLoopPromise<any Channel>
 
     func createNewConnection(
         serverName: String,
@@ -201,20 +205,17 @@ struct TestHTTP3SingleConnectionCreator: HTTP3ConnectionCreator {
             connectionChannel
         }
 
-        self.connectionState.future = connectionChannelFuture
+        // Fulfill the promise once the connection has been established.
+        connectionChannelFuture.cascade(to: self.connectionChannelPromise)
 
         return connectionChannelFuture
     }
 }
 
-final class ConnectionChannelState: @unchecked Sendable {
-    var future: EventLoopFuture<any Channel>?
-}
-
 extension HTTP3ClientConnection {
     /// Opens a single request stream on this connection wrapped in a `NIOAsyncChannel`.
     /// The stream is closed by the caller using `executeThenClose`.
-    fileprivate func makeRequestStream() async throws -> NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart> {
+    func makeRequestStream() async throws -> NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart> {
         try await self.concurrencyView.createRequestStream {
             let streamChannel = $0.channel
             return streamChannel.eventLoop.makeCompletedFuture {
