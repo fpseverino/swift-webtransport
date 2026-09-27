@@ -5,8 +5,7 @@ import NIOHTTP3
 import NIOHTTPTypes
 import NIOQUIC
 import Testing
-
-@testable import WebTransport
+import WebTransport
 
 @Suite("WebTransportConnection Tests")
 struct WebTransportConnectionTests {
@@ -21,26 +20,42 @@ struct WebTransportConnectionTests {
                 urlPath: "/webtransport"
             )
         ) { connection in
-            try await connection.withUnidirectionalStream { outbound in
-                try await outbound.write(ByteBuffer(string: "Hello, WebTransport!"))
-            }
+            try await withThrowingTaskGroup { group in
+                group.addTask {
+                    try await connection.withUnidirectionalStream { outbound in
+                        try await outbound.write(ByteBuffer(string: "Hello, WebTransport!"))
+                    }
+                }
 
-            try await connection.withBidirectionalStream { inbound, outbound in
-                try await outbound.write(ByteBuffer(string: "Hello from client!"))
-                var inboundStreamIterator = inbound.makeAsyncIterator()
-                let inboundStreamData = try await inboundStreamIterator.next()
-                print("Received inbound stream data: \(String(buffer: inboundStreamData ?? ByteBuffer(string: "error.")))")
-            }
+                group.addTask {
+                    try await connection.withBidirectionalStream { inbound, outbound in
+                        let payload = ByteBuffer(string: "Hello from client!")
+                        try await outbound.write(payload)
+                        var inboundStreamIterator = inbound.makeAsyncIterator()
+                        #expect(try await inboundStreamIterator.next() == payload)
+                    }
+                }
 
-            try await connection.withBidirectionalStream { inbound, outbound in
-                try await outbound.write(ByteBuffer(string: "Hello, Swift!"))
-                var inboundStreamIterator = inbound.makeAsyncIterator()
-                let inboundStreamData = try await inboundStreamIterator.next()
-                print("Received inbound stream data: \(String(buffer: inboundStreamData ?? ByteBuffer(string: "error.")))")
-            }
+                group.addTask {
+                    try await connection.withBidirectionalStream { inbound, outbound in
+                        let firstPayload = ByteBuffer(string: "Hello, World!")
+                        try await outbound.write(firstPayload)
+                        var inboundStreamIterator = inbound.makeAsyncIterator()
+                        #expect(try await inboundStreamIterator.next() == firstPayload)
 
-            try await connection.withUnidirectionalStream { outbound in
-                try await outbound.write(ByteBuffer(string: "Hello from unidirectional stream!"))
+                        let secondPayload = ByteBuffer(string: "Hello, Swift!")
+                        try await outbound.write(secondPayload)
+                        #expect(try await inboundStreamIterator.next() == secondPayload)
+                    }
+                }
+
+                group.addTask {
+                    try await connection.withUnidirectionalStream { outbound in
+                        try await outbound.write(ByteBuffer(string: "Hello from unidirectional stream!"))
+                    }
+                }
+
+                try await group.waitForAll()
             }
         }
     }
@@ -56,32 +71,44 @@ struct WebTransportConnectionTests {
                 urlPath: "/webtransport"
             )
         ) { connection in
-            try await connection.withUnidirectionalStream { outbound in
-                try await outbound.write(ByteBuffer(string: "open"))
-            }
+            try await withThrowingTaskGroup { group in
+                group.addTask {
+                    try await connection.withUnidirectionalStream { outbound in
+                        try await outbound.write(ByteBuffer(string: "open"))
+                    }
 
-            for await stream in await connection.incomingUnidirectionalStreams {
-                try await stream.executeThenClose { inbound in
-                    for try await message in inbound {
-                        print("Received incoming stream message: \(String(buffer: message))")
+                    for await stream in await connection.incomingUnidirectionalStreams {
+                        try await stream.executeThenClose { inbound in
+                            for try await message in inbound {
+                                print(String(buffer: message))
+                                // TODO: remove the Session ID from the start of Unidirectional Streams
+                                #expect(message == ByteBuffer(string: "\u{00}opened"))
+                                break
+                            }
+                        }
                         break
                     }
                 }
-                break
-            }
 
-            try await connection.withBidirectionalStream { inbound, outbound in
-                try await outbound.write(ByteBuffer(string: "open"))
-            }
+                group.addTask {
+                    try await connection.withBidirectionalStream { inbound, outbound in
+                        try await outbound.write(ByteBuffer(string: "open"))
+                    }
 
-            for await stream in await connection.incomingBidirectionalStreams {
-                try await stream.executeThenClose { inbound, outbound in
-                    for try await message in inbound {
-                        print("Received incoming stream message: \(String(buffer: message))")
+                    for await stream in await connection.incomingBidirectionalStreams {
+                        try await stream.executeThenClose { inbound, outbound in
+                            for try await message in inbound {
+                                print(String(buffer: message))
+                                // TODO: remove Stream Type, Signal Value (0x41) and Session ID from the start of Bidirectional Streams
+                                #expect(message == ByteBuffer(string: "\u{40}\u{41}\u{00}opened"))
+                                break
+                            }
+                        }
                         break
                     }
                 }
-                break
+
+                try await group.waitForAll()
             }
         }
     }
@@ -97,20 +124,26 @@ struct WebTransportConnectionTests {
                 urlPath: "/webtransport"
             )
         ) { connection in
-            try await connection.sendDatagram(ByteBuffer(string: "Hello, datagrams!"))
+            let payload = ByteBuffer(string: "Hello, datagrams!")
+
+            try await connection.sendDatagram(payload)
 
             for await datagram in await connection.incomingDatagrams {
-                print("Received incoming datagram: \(String(buffer: datagram.payload))")
+                #expect(datagram.payload == payload)
                 break
             }
         }
     }
 }
 
+/// Represents the different WebTransport test servers used in integration tests.
 enum TestWTServer: CaseIterable {
+    /// Written in Go with `webtransport-go`. Resides in the `go-server` directory.
     case go
+    /// Written in Rust with `wtransport`. Resides in the `rust-server` directory.
     case rust
 
+    /// The port on which the test server is listening.
     var port: Int {
         switch self {
         case .go: 6121
@@ -126,6 +159,7 @@ enum TestWTServer: CaseIterable {
         }
     }
 
+    /// The base URL of the `swift-webtransport` project.
     static let baseURL = URL(filePath: #filePath)
         .deletingLastPathComponent()
         .deletingLastPathComponent()

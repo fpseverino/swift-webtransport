@@ -147,6 +147,30 @@ mod webtransport {
         }
 
         async fn handle_incoming_session(incoming_session: IncomingSession) {
+            // Reads and echoes every message sent on a bidirectional stream until it closes,
+            // so multiple writes on the same stream each receive their own echo.
+            async fn handle_bi_stream(
+                connection: wtransport::Connection,
+                mut stream: (wtransport::SendStream, wtransport::RecvStream),
+            ) -> Result<()> {
+                let mut buffer = vec![0; 65536].into_boxed_slice();
+
+                while let Some(bytes_read) = stream.1.read(&mut buffer).await? {
+                    let str_data = std::str::from_utf8(&buffer[..bytes_read])?;
+
+                    info!("Received (bi) '{str_data}' from client");
+
+                    if str_data == "open" {
+                        let mut opened_stream = connection.open_bi().await?.await?;
+                        opened_stream.0.write_all(b"opened").await?;
+                    } else {
+                        stream.0.write_all(&buffer[..bytes_read]).await?;
+                    }
+                }
+
+                Ok(())
+            }
+
             async fn handle_incoming_session_impl(incoming_session: IncomingSession) -> Result<()> {
                 let mut buffer = vec![0; 65536].into_boxed_slice();
 
@@ -167,26 +191,14 @@ mod webtransport {
                 loop {
                     tokio::select! {
                         stream = connection.accept_bi() => {
-                            let mut stream = stream?;
+                            let stream = stream?;
                             info!("Accepted BI stream");
 
-                            let Some(bytes_read) = stream.1.read(&mut buffer).await? else {
-                                continue;
-                            };
-
-                            let str_data = std::str::from_utf8(&buffer[..bytes_read])?;
-
-                            info!("Received (bi) '{str_data}' from client");
-
-                            if str_data == "open" {
-                                let mut opened_stream = connection.open_bi().await?.await?;
-                                opened_stream.0.write_all(b"opened").await?;
-                            } else {
-                                stream.0.write_all(&buffer[..bytes_read]).await?;
-                            }
-
-                            // Drain to EOF so dropping the stream doesn't implicitly send STOP_SENDING.
-                            while stream.1.read(&mut buffer).await?.is_some() {}
+                            let connection = connection.clone();
+                            tokio::spawn(
+                                handle_bi_stream(connection, stream)
+                                    .instrument(info_span!("BiStream")),
+                            );
                         }
                         stream = connection.accept_uni() => {
                             let mut stream = stream?;
