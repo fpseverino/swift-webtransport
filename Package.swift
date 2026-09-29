@@ -19,7 +19,7 @@ let package = Package(
         // so we can create QUIC streams for WebTransport from the connection after the HTTP/3 handshake.
         // It also ignores errors and exposes the APIs needed for WebTransport incoming unidirectional streams.
         .package(url: "https://github.com/fpseverino/swift-nio-http3.git", branch: "webtransport"),
-        .package(url: "https://github.com/apple/swift-nio-quic.git", branch: "main"),
+        .package(url: "https://github.com/apple/swift-nio-quic.git", .upToNextMinor(from: "0.4.0")),
         .package(url: "https://github.com/apple/swift-nio-quic-helpers.git", .upToNextMinor(from: "0.1.1")),
         // Observability
         .package(url: "https://github.com/apple/swift-log.git", from: "1.14.0"),

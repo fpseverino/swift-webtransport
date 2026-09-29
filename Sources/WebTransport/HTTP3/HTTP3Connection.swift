@@ -1,12 +1,8 @@
-import HTTP3
-import HTTPTypes
 import Logging
 import NIOCore
 @_spi(HTTP3AsyncInterface) import NIOHTTP3
-import NIOHTTPTypes
 import NIOPosix
 import NIOQUIC
-import NIOQUICHelpers
 
 /// Connect to an HTTP/3 server,
 /// run the provided closure passing to it the connection,
@@ -37,85 +33,12 @@ func withH3Connection<Value>(
         .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
         .bind(host: "127.0.0.1", port: 0) { channel in
             channel.eventLoop.makeCompletedFuture {
-                let (quicHandler, _) = try QUICHandler.makeHandlerAndConnectionMultiplexer(
-                    channel: channel,
-                    quicConfiguration: QUICConfiguration.client(
-                        verificationConfiguration: verificationConfiguration,
-                        applicationProtocols: ["h3"]
-                    ),
+                let connectionCreator = try channel.makeConnectionCreator(
+                    verificationConfiguration: verificationConfiguration,
                     logger: logger,
-                    inboundStreamChannelInitializer: { channel -> EventLoopFuture<Never> in
-                        channel.eventLoop.makeCompletedFuture { fatalError() }
-                    }
-                )
-                try channel.pipeline.syncOperations.addHandler(quicHandler)
-                let connectionCreator = TestHTTP3SingleConnectionCreator(
-                    quicHandler: quicHandler,
-                    connectionInitializer: { connectionChannel, streamCreator in
-                        connectionChannel.eventLoop.makeCompletedFuture {
-                            let h3Handler = HTTP3ConnectionHandler.client(
-                                eventLoop: connectionChannel.eventLoop,
-                                configuration: .defaults,
-                                // TODO: also check SETTINGS received from the server
-                                settings: try .init(parsing: [
-                                    .init(identifier: .h3Datagram, value: 1),
-                                    .init(identifier: .webTransportEnabled, value: 1),
-                                    // TODO: let the user set these
-                                    .init(identifier: .webTransportInitialMaximumStreamsUnidirectional, value: 100),
-                                    .init(identifier: .webTransportInitialMaximumStreamsBidirectional, value: 100),
-                                    .init(identifier: .webTransportInitialMaximumData, value: 1 << 20),
-                                ]),
-                                streamCreator: streamCreator,
-                                logger: logger,
-                                inboundPushStreamInitializer: { _ in fatalError() },
-                                internalInboundStreamInitializer: { streamChannel, _, streamType in
-                                    guard
-                                        case .unknown(let raw) = streamType,
-                                        raw == 0x54
-                                    else {
-                                        return streamChannel.eventLoop.makeSucceededVoidFuture()
-                                    }
-                                    incomingUnidirectionalStreamsContinuation.yield(
-                                        try! NIOAsyncChannel<ByteBuffer, Never>(
-                                            wrappingChannelSynchronously: streamChannel,
-                                            configuration: .init(isOutboundHalfClosureEnabled: true)
-                                        )
-                                    )
-                                    return streamChannel.eventLoop.makeSucceededVoidFuture()
-                                }
-                            )
-                            try connectionChannel.pipeline.syncOperations.addHandler(h3Handler)
-                            try connectionChannel.pipeline.syncOperations.addHandler(
-                                IncomingDatagramsChannelHandler(incomingDatagramsContinuation: incomingDatagramsContinuation)
-                            )
-                            return connectionChannel
-                        }
-                    },
-                    inboundStreamInitializer: { streamChannel in
-                        let quicStreamID =
-                            if let sync = streamChannel.syncOptions {
-                                try! sync.getOption(.quicStreamID)
-                            } else {
-                                try! streamChannel.getOption(.quicStreamID).wait()
-                            }
-                        switch QUICStreamID(rawValue: quicStreamID).type {
-                        case .serverInitiatedBidirectional:
-                            incomingBidirectionalStreamsContinuation.yield(
-                                try! NIOAsyncChannel<ByteBuffer, ByteBuffer>(
-                                    wrappingChannelSynchronously: streamChannel,
-                                    configuration: .init(isOutboundHalfClosureEnabled: true)
-                                )
-                            )
-                            return streamChannel.eventLoop.makeSucceededVoidFuture()
-                        case .serverInitiatedUnidirectional, .clientInitiatedUnidirectional, .clientInitiatedBidirectional:
-                            break
-                        }
-                        return streamChannel.parent!.pipeline.handler(type: HTTP3ConnectionHandler<NIOQUIC.QUICStreamCreator>.self)
-                            .flatMap { http3Handler in
-                                http3Handler.inboundStreamReceived(streamChannel)
-                            }
-                    },
-                    connectionChannelPromise: channel.eventLoop.makePromise()
+                    incomingUnidirectionalStreamsContinuation: incomingUnidirectionalStreamsContinuation,
+                    incomingBidirectionalStreamsContinuation: incomingBidirectionalStreamsContinuation,
+                    incomingDatagramsContinuation: incomingDatagramsContinuation
                 )
                 return (channel, NIOLoopBound(connectionCreator, eventLoop: channel.eventLoop))
             }
@@ -169,132 +92,5 @@ func withH3Connection<Value>(
         }
 
         throw error
-    }
-}
-
-struct TestHTTP3SingleConnectionCreator: HTTP3ConnectionCreator {
-    let quicHandler: QUICHandler<QUICStreamChannels>
-    let connectionInitializer: @Sendable (any Channel, NIOQUIC.QUICStreamCreator) -> EventLoopFuture<any Channel>
-    let inboundStreamInitializer: @Sendable (any Channel) -> EventLoopFuture<Void>
-
-    var connectionEstablished: Bool = false
-    let connectionChannelPromise: EventLoopPromise<any Channel>
-
-    func createNewConnection(
-        serverName: String,
-        remoteAddress: SocketAddress,
-        connectionInitializer h3ConnectionInitializer: @escaping @Sendable (any Channel) -> EventLoopFuture<Void>
-    ) -> EventLoopFuture<any Channel> {
-        guard self.connectionEstablished == false else {
-            fatalError("This connection creator only supports creating one connection.")
-        }
-
-        let connectionChannelFuture = self.quicHandler.createOutboundConnection(
-            serverName: serverName,
-            remoteAddress: remoteAddress,
-            connectionInitializer: { [connectionInitializer] connectionChannel, streamCreator in
-                connectionInitializer(connectionChannel, streamCreator).flatMap { newConnectionChannel in
-                    h3ConnectionInitializer(newConnectionChannel)
-                }
-            },
-            inboundStreamInitializer: self.inboundStreamInitializer
-        ).map { connectionChannel, _ in
-            connectionChannel
-        }
-
-        // Fulfill the promise once the connection has been established.
-        connectionChannelFuture.cascade(to: self.connectionChannelPromise)
-
-        return connectionChannelFuture
-    }
-}
-
-extension HTTP3ClientConnection {
-    /// Opens a single request stream on this connection wrapped in a `NIOAsyncChannel`.
-    /// The stream is closed by the caller using `executeThenClose`.
-    func makeRequestStream() async throws -> NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart> {
-        try await self.concurrencyView.createRequestStream {
-            let streamChannel = $0.channel
-            return streamChannel.eventLoop.makeCompletedFuture {
-                try NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart>(
-                    wrappingChannelSynchronously: streamChannel,
-                    configuration: .init(isOutboundHalfClosureEnabled: true)
-                )
-            }
-        }
-    }
-
-    /// > Note: This requires changes in NIOHTTP3 to expose the `streamCreator`.
-    func makeUnidirectionalStream() async throws -> NIOAsyncChannel<Never, ByteBuffer> {
-        try await self.h3Handler.eventLoop.flatSubmit {
-            self.h3Handler.value.coordinator.streamCreator.createUnidirectionalStream { streamInitializer in
-                streamInitializer.channel.eventLoop.makeCompletedFuture {
-                    try NIOAsyncChannel(
-                        wrappingChannelSynchronously: streamInitializer.channel,
-                        configuration: .init(
-                            isOutboundHalfClosureEnabled: true,
-                            inboundType: Never.self,
-                            outboundType: ByteBuffer.self
-                        )
-                    )
-                }
-            }
-        }.get()
-    }
-
-    /// > Note: This requires changes in NIOHTTP3 to expose the `streamCreator`.
-    func makeBidirectionalStream() async throws -> NIOAsyncChannel<ByteBuffer, ByteBuffer> {
-        try await self.h3Handler.eventLoop.flatSubmit {
-            self.h3Handler.value.coordinator.streamCreator.createBidirectionalStream { streamInitializer in
-                streamInitializer.channel.eventLoop.makeCompletedFuture {
-                    try NIOAsyncChannel(
-                        wrappingChannelSynchronously: streamInitializer.channel,
-                        configuration: .init(
-                            isOutboundHalfClosureEnabled: true,
-                            inboundType: ByteBuffer.self,
-                            outboundType: ByteBuffer.self
-                        )
-                    )
-                }
-            }
-        }.get()
-    }
-}
-
-extension HTTP3Setting.Identifier {
-    /// Corresponds to `SETTINGS_WT_ENABLED`.
-    ///
-    /// The default value is zero.
-    ///
-    /// See [draft-ietf-webtrans-http3-16 § 9.2](https://datatracker.ietf.org/doc/draft-ietf-webtrans-http3/)
-    static var webTransportEnabled: HTTP3Setting.Identifier {
-        HTTP3Setting.Identifier(extensionSetting: 0x2c7c_f000)!
-    }
-
-    /// Corresponds to `SETTINGS_WT_INITIAL_MAX_STREAMS_UNI`.
-    ///
-    /// The default value is zero.
-    ///
-    /// See [draft-ietf-webtrans-http3-16 § 9.2](https://datatracker.ietf.org/doc/draft-ietf-webtrans-http3/)
-    static var webTransportInitialMaximumStreamsUnidirectional: HTTP3Setting.Identifier {
-        HTTP3Setting.Identifier(extensionSetting: 0x2b64)!
-    }
-
-    /// Corresponds to `SETTINGS_WT_INITIAL_MAX_STREAMS_BIDI`.
-    ///
-    /// The default value is zero.
-    ///
-    /// See [draft-ietf-webtrans-http3-16 § 9.2](https://datatracker.ietf.org/doc/draft-ietf-webtrans-http3/)
-    static var webTransportInitialMaximumStreamsBidirectional: HTTP3Setting.Identifier {
-        HTTP3Setting.Identifier(extensionSetting: 0x2b65)!
-    }
-
-    /// Corresponds to `SETTINGS_WT_INITIAL_MAX_DATA`.
-    ///
-    /// The default value is zero.
-    ///
-    /// See [draft-ietf-webtrans-http3-16 § 9.2](https://datatracker.ietf.org/doc/draft-ietf-webtrans-http3/)
-    static var webTransportInitialMaximumData: HTTP3Setting.Identifier {
-        HTTP3Setting.Identifier(extensionSetting: 0x2b61)!
     }
 }
