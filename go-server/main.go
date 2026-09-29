@@ -149,6 +149,14 @@ func runServer(tlsConf *tls.Config, certHash, addr, browserAddr string, protocol
 		ApplicationProtocols: protocols,
 		H3:                   h3Server,
 		CheckOrigin:          func(*http.Request) bool { return true },
+		// Required for the client to be able to open multiple WebTransport sessions on a single
+		// HTTP/3 connection; without it, the server rejects any session beyond the first with
+		// "multiple sessions require flow control".
+		Config: &webtransport.Config{
+			MaxIncomingStreams:    100,
+			MaxIncomingUniStreams: 100,
+			MaxIncomingData:       1 << 20,
+		},
 	}
 
 	// Create a new HTTP endpoint /webtransport.

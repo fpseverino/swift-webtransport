@@ -1,18 +1,15 @@
 import HTTPTypes
-public import Logging
+import Logging
 public import NIOCore
 @_spi(HTTP3AsyncInterface) public import NIOHTTP3
 import NIOHTTPTypes
-public import NIOPosix
+import NIOPosix
 import NIOQUIC
 import NIOQUICHelpers
 import RawStructuredFieldValues
 
 /// A single WebTransport session opened over an HTTP/3 connection.
 public final actor WebTransportSession: Sendable {
-    /// The logger to use for this session.
-    private let logger: Logger
-
     /// The QUIC stream ID of the CONNECT stream that established the WebTransport session.
     private let sessionID: QUICStreamID
 
@@ -34,7 +31,6 @@ public final actor WebTransportSession: Sendable {
     public let incomingDatagrams: AsyncStream<HTTP3Datagram>
 
     init(
-        logger: Logger,
         sessionID: QUICStreamID,
         h3Connection: HTTP3ClientConnection<Never, NIOQUIC.QUICStreamCreator>,
         incomingUnidirectionalStreams: IncomingUnidirectionalStreams,
@@ -42,93 +38,12 @@ public final actor WebTransportSession: Sendable {
         datagramChannel: any Channel,
         incomingDatagrams: AsyncStream<HTTP3Datagram>
     ) {
-        self.logger = logger
         self.sessionID = sessionID
         self.h3Connection = h3Connection
         self.incomingUnidirectionalStreams = incomingUnidirectionalStreams
         self.incomingBidirectionalStreams = incomingBidirectionalStreams
         self.datagramChannel = datagramChannel
         self.incomingDatagrams = incomingDatagrams
-    }
-
-    /// Create a new WebTransport session and run operations using it, then automatically terminate the session.
-    ///
-    /// - Parameters:
-    ///   - ipAddress: The IP address of the WebTransport server.
-    ///   - port: The port of the WebTransport server.
-    ///   - configuration: The configuration for the WebTransport session.
-    ///   - eventLoopGroup: The `EventLoopGroup` to run the connection on.
-    ///   - logger: The logger to use for the session. Defaults to the current task-local logger.
-    ///   - operation: The closure where WebTransport operations using the session are performed.
-    ///
-    /// - Returns: The value returned by the `operation` closure.
-    public static func withSession<Value>(
-        ipAddress: String,
-        port: Int,
-        configuration: WebTransportSession.Configuration,
-        eventLoopGroup: any EventLoopGroup = MultiThreadedEventLoopGroup.singleton,
-        logger: Logger = .current,
-        operation: (WebTransportSession) async throws -> Value
-    ) async throws -> Value {
-        try await withH3Connection(
-            ipAddress: ipAddress,
-            port: port,
-            verificationConfiguration: configuration.verificationConfiguration,
-            eventLoopGroup: eventLoopGroup,
-            logger: logger
-        ) {
-            sessionID,
-            responseReader,
-            requestWriter,
-            h3Connection,
-            incomingUnidirectionalStreams,
-            incomingBidirectionalStreams,
-            datagramChannel,
-            incomingDatagrams
-            in
-            var headerSerializer = StructuredFieldValueSerializer()
-            var connectRequest = HTTPRequest(
-                method: .connect,
-                scheme: "https",
-                authority: "\(ipAddress):\(port)",
-                path: configuration.urlPath,
-                headerFields: try .init(parsedTrailerFields: [
-                    .init(
-                        name: .init("WT-Available-Protocols")!,
-                        value: headerSerializer.writeListFieldValue(
-                            configuration.applicationProtocols.map {
-                                .item(.init(bareItem: RFC9651BareItem.string($0), parameters: [:]))
-                            }
-                        )
-                    )
-                ])
-            )
-            // TODO: this isn't set to "webtransport-h3" to support servers that haven't implemented newer drafts of the WebTransport protocol.
-            // https://github.com/BiagioFesta/wtransport/issues/328
-            connectRequest.extendedConnectProtocol = "webtransport"
-            try await requestWriter.write(.head(connectRequest))
-
-            var responseIterator = responseReader.makeAsyncIterator()
-            guard
-                let headResponsePart = try await responseIterator.next(),
-                case .head(let response) = headResponsePart,
-                response.status.kind == .successful
-            else {
-                throw WebTransportError.serverRejectedSession
-            }
-
-            return try await operation(
-                WebTransportSession(
-                    logger: logger,
-                    sessionID: sessionID,
-                    h3Connection: h3Connection,
-                    incomingUnidirectionalStreams: incomingUnidirectionalStreams,
-                    incomingBidirectionalStreams: incomingBidirectionalStreams,
-                    datagramChannel: datagramChannel,
-                    incomingDatagrams: incomingDatagrams
-                )
-            )
-        }
     }
 
     /// Open a unidirectional stream that can be used to write to the server.

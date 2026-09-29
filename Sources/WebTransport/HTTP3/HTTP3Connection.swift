@@ -9,7 +9,7 @@ import NIOQUIC
 import NIOQUICHelpers
 
 /// Connect to an HTTP/3 server,
-/// run the provided closure passing to it all the necessary objects for a WebTransport session,
+/// run the provided closure passing to it the connection,
 /// and then automatically close the connection.
 ///
 /// - Parameters:
@@ -18,7 +18,7 @@ import NIOQUICHelpers
 ///   - verificationConfiguration: Information required to verify the server identity.
 ///   - eventLoopGroup: The `EventLoopGroup` to run the connection on.
 ///   - logger: The logger to use for the connection.
-///   - body: The closure where WebTransport operations using all the necessary objects are performed.
+///   - body: The closure where WebTransport operations using the connection are performed.
 ///
 /// - Returns: The value returned by the `body` closure.
 func withH3Connection<Value>(
@@ -27,16 +27,7 @@ func withH3Connection<Value>(
     verificationConfiguration: VerificationConfiguration,
     eventLoopGroup: any EventLoopGroup,
     logger: Logger,
-    body: (
-        QUICStreamID,
-        NIOAsyncChannelInboundStream<HTTPResponsePart>,
-        NIOAsyncChannelOutboundWriter<HTTPRequestPart>,
-        HTTP3ClientConnection<Never, NIOQUIC.QUICStreamCreator>,
-        WebTransportSession.IncomingUnidirectionalStreams,
-        WebTransportSession.IncomingBidirectionalStreams,
-        any Channel,
-        AsyncStream<HTTP3Datagram>
-    ) async throws -> Value
+    body: (WebTransportConnection) async throws -> Value
 ) async throws -> Value {
     let (incomingUnidirectionalStreams, incomingUnidirectionalStreamsContinuation) = WebTransportSession.IncomingUnidirectionalStreams.makeStream()
     let (incomingBidirectionalStreams, incomingBidirectionalStreamsContinuation) = WebTransportSession.IncomingBidirectionalStreams.makeStream()
@@ -65,7 +56,15 @@ func withH3Connection<Value>(
                             let h3Handler = HTTP3ConnectionHandler.client(
                                 eventLoop: connectionChannel.eventLoop,
                                 configuration: .defaults,
-                                settings: HTTP3Settings(h3Datagram: true),
+                                // TODO: also check SETTINGS received from the server
+                                settings: try .init(parsing: [
+                                    .init(identifier: .h3Datagram, value: 1),
+                                    .init(identifier: .webTransportEnabled, value: 1),
+                                    // TODO: let the user set these
+                                    .init(identifier: .webTransportInitialMaximumStreamsUnidirectional, value: 100),
+                                    .init(identifier: .webTransportInitialMaximumStreamsBidirectional, value: 100),
+                                    .init(identifier: .webTransportInitialMaximumData, value: 1 << 20),
+                                ]),
                                 streamCreator: streamCreator,
                                 logger: logger,
                                 inboundPushStreamInitializer: { _ in fatalError() },
@@ -141,19 +140,17 @@ func withH3Connection<Value>(
     }.get()
 
     do {
-        let asyncChannel = try await h3Connection.makeRequestStream()
-        let value = try await asyncChannel.executeThenClose {
-            try await body(
-                QUICStreamID(rawValue: try await asyncChannel.channel.getOption(.quicStreamID).get()),
-                $0,
-                $1,
-                h3Connection,
-                incomingUnidirectionalStreams,
-                incomingBidirectionalStreams,
-                connectionChannel,
-                incomingDatagrams
+        let value = try await body(
+            WebTransportConnection(
+                ipAddress: ipAddress,
+                port: port,
+                h3Connection: h3Connection,
+                incomingUnidirectionalStreams: incomingUnidirectionalStreams,
+                incomingBidirectionalStreams: incomingBidirectionalStreams,
+                datagramChannel: connectionChannel,
+                incomingDatagrams: incomingDatagrams
             )
-        }
+        )
 
         do {
             try await quicChannel.close()
@@ -261,5 +258,43 @@ extension HTTP3ClientConnection {
                 }
             }
         }.get()
+    }
+}
+
+extension HTTP3Setting.Identifier {
+    /// Corresponds to `SETTINGS_WT_ENABLED`.
+    ///
+    /// The default value is zero.
+    ///
+    /// See [draft-ietf-webtrans-http3-16 § 9.2](https://datatracker.ietf.org/doc/draft-ietf-webtrans-http3/)
+    static var webTransportEnabled: HTTP3Setting.Identifier {
+        HTTP3Setting.Identifier(extensionSetting: 0x2c7c_f000)!
+    }
+
+    /// Corresponds to `SETTINGS_WT_INITIAL_MAX_STREAMS_UNI`.
+    ///
+    /// The default value is zero.
+    ///
+    /// See [draft-ietf-webtrans-http3-16 § 9.2](https://datatracker.ietf.org/doc/draft-ietf-webtrans-http3/)
+    static var webTransportInitialMaximumStreamsUnidirectional: HTTP3Setting.Identifier {
+        HTTP3Setting.Identifier(extensionSetting: 0x2b64)!
+    }
+
+    /// Corresponds to `SETTINGS_WT_INITIAL_MAX_STREAMS_BIDI`.
+    ///
+    /// The default value is zero.
+    ///
+    /// See [draft-ietf-webtrans-http3-16 § 9.2](https://datatracker.ietf.org/doc/draft-ietf-webtrans-http3/)
+    static var webTransportInitialMaximumStreamsBidirectional: HTTP3Setting.Identifier {
+        HTTP3Setting.Identifier(extensionSetting: 0x2b65)!
+    }
+
+    /// Corresponds to `SETTINGS_WT_INITIAL_MAX_DATA`.
+    ///
+    /// The default value is zero.
+    ///
+    /// See [draft-ietf-webtrans-http3-16 § 9.2](https://datatracker.ietf.org/doc/draft-ietf-webtrans-http3/)
+    static var webTransportInitialMaximumData: HTTP3Setting.Identifier {
+        HTTP3Setting.Identifier(extensionSetting: 0x2b61)!
     }
 }
