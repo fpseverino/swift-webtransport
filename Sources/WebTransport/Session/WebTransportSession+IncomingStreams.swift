@@ -1,6 +1,6 @@
 public import NIOCore
 
-extension WebTransportConnection {
+extension WebTransportSession {
     /// An asynchronous sequence of unidirectional streams opened by the server.
     /// Each one can be used to read data from the server.
     public struct IncomingUnidirectionalStreams: AsyncSequence, Sendable {
@@ -41,9 +41,9 @@ extension WebTransportConnection {
 }
 
 @available(*, unavailable)
-extension WebTransportConnection.IncomingUnidirectionalStreams.AsyncIterator: Sendable {}
+extension WebTransportSession.IncomingUnidirectionalStreams.AsyncIterator: Sendable {}
 
-extension WebTransportConnection {
+extension WebTransportSession {
     /// An asynchronous sequence of bidirectional streams opened by the server.
     /// Each one can be used to read data from the server and write data back to it.
     public struct IncomingBidirectionalStreams: AsyncSequence, Sendable {
@@ -84,4 +84,4 @@ extension WebTransportConnection {
 }
 
 @available(*, unavailable)
-extension WebTransportConnection.IncomingBidirectionalStreams.AsyncIterator: Sendable {}
+extension WebTransportSession.IncomingBidirectionalStreams.AsyncIterator: Sendable {}

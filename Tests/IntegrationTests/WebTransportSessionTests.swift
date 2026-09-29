@@ -7,11 +7,11 @@ import NIOQUIC
 import Testing
 import WebTransport
 
-@Suite("WebTransportConnection Tests")
-struct WebTransportConnectionTests {
+@Suite("WebTransportSession Tests")
+struct WebTransportSessionTests {
     @Test("Open Streams", arguments: TestWTServer.allCases)
     func openStreams(server: TestWTServer) async throws {
-        try await WebTransportConnection.withConnection(
+        try await WebTransportSession.withSession(
             ipAddress: "127.0.0.1",
             port: server.port,
             configuration: .init(
@@ -19,16 +19,16 @@ struct WebTransportConnectionTests {
                 applicationProtocols: ["webtransport-test", "webtransport-test-2"],
                 urlPath: "/webtransport"
             )
-        ) { connection in
+        ) { session in
             try await withThrowingTaskGroup { group in
                 group.addTask {
-                    try await connection.withUnidirectionalStream { outbound in
+                    try await session.withUnidirectionalStream { outbound in
                         try await outbound.write(ByteBuffer(string: "Hello, WebTransport!"))
                     }
                 }
 
                 group.addTask {
-                    try await connection.withBidirectionalStream { inbound, outbound in
+                    try await session.withBidirectionalStream { inbound, outbound in
                         let payload = ByteBuffer(string: "Hello from client!")
                         try await outbound.write(payload)
                         var inboundStreamIterator = inbound.makeAsyncIterator()
@@ -37,7 +37,7 @@ struct WebTransportConnectionTests {
                 }
 
                 group.addTask {
-                    try await connection.withBidirectionalStream { inbound, outbound in
+                    try await session.withBidirectionalStream { inbound, outbound in
                         let firstPayload = ByteBuffer(string: "Hello, World!")
                         try await outbound.write(firstPayload)
                         var inboundStreamIterator = inbound.makeAsyncIterator()
@@ -50,7 +50,7 @@ struct WebTransportConnectionTests {
                 }
 
                 group.addTask {
-                    try await connection.withUnidirectionalStream { outbound in
+                    try await session.withUnidirectionalStream { outbound in
                         try await outbound.write(ByteBuffer(string: "Hello from unidirectional stream!"))
                     }
                 }
@@ -62,7 +62,7 @@ struct WebTransportConnectionTests {
 
     @Test("Incoming Streams", arguments: TestWTServer.allCases)
     func incomingStreams(server: TestWTServer) async throws {
-        try await WebTransportConnection.withConnection(
+        try await WebTransportSession.withSession(
             ipAddress: "127.0.0.1",
             port: server.port,
             configuration: .init(
@@ -70,14 +70,14 @@ struct WebTransportConnectionTests {
                 applicationProtocols: ["webtransport-test", "webtransport-test-2"],
                 urlPath: "/webtransport"
             )
-        ) { connection in
+        ) { session in
             try await withThrowingTaskGroup { group in
                 group.addTask {
-                    try await connection.withUnidirectionalStream { outbound in
+                    try await session.withUnidirectionalStream { outbound in
                         try await outbound.write(ByteBuffer(string: "open"))
                     }
 
-                    for await stream in await connection.incomingUnidirectionalStreams {
+                    for await stream in await session.incomingUnidirectionalStreams {
                         try await stream.executeThenClose { inbound in
                             for try await message in inbound {
                                 print(String(buffer: message))
@@ -91,11 +91,11 @@ struct WebTransportConnectionTests {
                 }
 
                 group.addTask {
-                    try await connection.withBidirectionalStream { inbound, outbound in
+                    try await session.withBidirectionalStream { inbound, outbound in
                         try await outbound.write(ByteBuffer(string: "open"))
                     }
 
-                    for await stream in await connection.incomingBidirectionalStreams {
+                    for await stream in await session.incomingBidirectionalStreams {
                         try await stream.executeThenClose { inbound, outbound in
                             for try await message in inbound {
                                 print(String(buffer: message))
@@ -115,7 +115,7 @@ struct WebTransportConnectionTests {
 
     @Test("Datagrams", arguments: TestWTServer.allCases)
     func datagrams(server: TestWTServer) async throws {
-        try await WebTransportConnection.withConnection(
+        try await WebTransportSession.withSession(
             ipAddress: "127.0.0.1",
             port: server.port,
             configuration: .init(
@@ -123,12 +123,12 @@ struct WebTransportConnectionTests {
                 applicationProtocols: ["webtransport-test", "webtransport-test-2"],
                 urlPath: "/webtransport"
             )
-        ) { connection in
+        ) { session in
             let payload = ByteBuffer(string: "Hello, datagrams!")
 
-            try await connection.sendDatagram(payload)
+            try await session.sendDatagram(payload)
 
-            for await datagram in await connection.incomingDatagrams {
+            for await datagram in await session.incomingDatagrams {
                 #expect(datagram.payload == payload)
                 break
             }

@@ -1,4 +1,4 @@
-/// Errors returned by a WebTransport connection.
+/// Errors returned by the WebTransport client.
 public struct WebTransportError: Error, Sendable, Equatable {
     public struct ErrorType: Sendable, Hashable, CustomStringConvertible, Equatable {
         enum Base: String, Sendable, Equatable {

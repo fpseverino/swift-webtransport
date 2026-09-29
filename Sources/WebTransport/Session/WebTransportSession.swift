@@ -8,9 +8,9 @@ import NIOQUIC
 import NIOQUICHelpers
 import RawStructuredFieldValues
 
-/// A single connection to a WebTransport server.
-public final actor WebTransportConnection: Sendable {
-    /// The logger to use for this connection.
+/// A single WebTransport session opened over an HTTP/3 connection.
+public final actor WebTransportSession: Sendable {
+    /// The logger to use for this session.
     private let logger: Logger
 
     /// The QUIC stream ID of the CONNECT stream that established the WebTransport session.
@@ -51,24 +51,24 @@ public final actor WebTransportConnection: Sendable {
         self.incomingDatagrams = incomingDatagrams
     }
 
-    /// Connect to the WebTransport server and run operations using the connection, then automatically close the connection.
+    /// Create a new WebTransport session and run operations using it, then automatically terminate the session.
     ///
     /// - Parameters:
     ///   - ipAddress: The IP address of the WebTransport server.
     ///   - port: The port of the WebTransport server.
-    ///   - configuration: The configuration for the WebTransport connection.
+    ///   - configuration: The configuration for the WebTransport session.
     ///   - eventLoopGroup: The `EventLoopGroup` to run the connection on.
-    ///   - logger: The logger to use for the connection. Defaults to the current task-local logger.
-    ///   - operation: The closure where WebTransport operations using the connection are performed.
+    ///   - logger: The logger to use for the session. Defaults to the current task-local logger.
+    ///   - operation: The closure where WebTransport operations using the session are performed.
     ///
     /// - Returns: The value returned by the `operation` closure.
-    public static func withConnection<Value>(
+    public static func withSession<Value>(
         ipAddress: String,
         port: Int,
-        configuration: WebTransportConnectionConfiguration,
+        configuration: WebTransportSession.Configuration,
         eventLoopGroup: any EventLoopGroup = MultiThreadedEventLoopGroup.singleton,
         logger: Logger = .current,
-        operation: (WebTransportConnection) async throws -> Value
+        operation: (WebTransportSession) async throws -> Value
     ) async throws -> Value {
         try await withH3Connection(
             ipAddress: ipAddress,
@@ -118,7 +118,7 @@ public final actor WebTransportConnection: Sendable {
             }
 
             return try await operation(
-                WebTransportConnection(
+                WebTransportSession(
                     logger: logger,
                     sessionID: sessionID,
                     h3Connection: h3Connection,

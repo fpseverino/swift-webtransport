@@ -32,14 +32,14 @@ func withH3Connection<Value>(
         NIOAsyncChannelInboundStream<HTTPResponsePart>,
         NIOAsyncChannelOutboundWriter<HTTPRequestPart>,
         HTTP3ClientConnection<Never, NIOQUIC.QUICStreamCreator>,
-        WebTransportConnection.IncomingUnidirectionalStreams,
-        WebTransportConnection.IncomingBidirectionalStreams,
+        WebTransportSession.IncomingUnidirectionalStreams,
+        WebTransportSession.IncomingBidirectionalStreams,
         any Channel,
         AsyncStream<HTTP3Datagram>
     ) async throws -> Value
 ) async throws -> Value {
-    let (incomingUnidirectionalStreams, incomingUnidirectionalStreamsContinuation) = WebTransportConnection.IncomingUnidirectionalStreams.makeStream()
-    let (incomingBidirectionalStreams, incomingBidirectionalStreamsContinuation) = WebTransportConnection.IncomingBidirectionalStreams.makeStream()
+    let (incomingUnidirectionalStreams, incomingUnidirectionalStreamsContinuation) = WebTransportSession.IncomingUnidirectionalStreams.makeStream()
+    let (incomingBidirectionalStreams, incomingBidirectionalStreamsContinuation) = WebTransportSession.IncomingBidirectionalStreams.makeStream()
     let (incomingDatagrams, incomingDatagramsContinuation) = AsyncStream<HTTP3Datagram>.makeStream()
 
     let (quicChannel, connectionCreator) = try await DatagramBootstrap(group: eventLoopGroup)
