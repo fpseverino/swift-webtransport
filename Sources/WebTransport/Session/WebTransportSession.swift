@@ -1,7 +1,7 @@
 import HTTPTypes
 import Logging
 public import NIOCore
-@_spi(HTTP3AsyncInterface) public import NIOHTTP3
+@_spi(HTTP3AsyncInterface) import NIOHTTP3
 import NIOHTTPTypes
 import NIOPosix
 import NIOQUIC
@@ -28,7 +28,7 @@ public final actor WebTransportSession: Sendable {
     private let datagramChannel: any Channel
 
     /// An asynchronous sequence of incoming datagrams
-    public let incomingDatagrams: AsyncStream<HTTP3Datagram>
+    public let incomingDatagrams: AsyncStream<ByteBuffer>
 
     init(
         sessionID: QUICStreamID,
@@ -36,7 +36,7 @@ public final actor WebTransportSession: Sendable {
         incomingUnidirectionalStreams: IncomingUnidirectionalStreams,
         incomingBidirectionalStreams: IncomingBidirectionalStreams,
         datagramChannel: any Channel,
-        incomingDatagrams: AsyncStream<HTTP3Datagram>
+        incomingDatagrams: AsyncStream<ByteBuffer>
     ) {
         self.sessionID = sessionID
         self.h3Connection = h3Connection

@@ -47,9 +47,9 @@ extension Channel {
     func makeConnectionCreator(
         verificationConfiguration: VerificationConfiguration,
         logger: Logger,
-        incomingUnidirectionalStreamsContinuation: WebTransportSession.IncomingUnidirectionalStreams.Continuation,
-        incomingBidirectionalStreamsContinuation: WebTransportSession.IncomingBidirectionalStreams.Continuation,
-        incomingDatagramsContinuation: AsyncStream<HTTP3Datagram>.Continuation
+        incomingUnidirectionalStreams: WebTransportConnection.IncomingUnidirectionalStreams,
+        incomingBidirectionalStreams: WebTransportConnection.IncomingBidirectionalStreams,
+        incomingDatagrams: WebTransportConnection.IncomingDatagrams
     ) throws -> TestHTTP3SingleConnectionCreator {
         let (quicHandler, _) = try QUICHandler.makeHandlerAndConnectionMultiplexer(
             channel: self,
@@ -89,18 +89,15 @@ extension Channel {
                             else {
                                 return streamChannel.eventLoop.makeSucceededVoidFuture()
                             }
-                            incomingUnidirectionalStreamsContinuation.yield(
-                                try! NIOAsyncChannel<ByteBuffer, Never>(
-                                    wrappingChannelSynchronously: streamChannel,
-                                    configuration: .init(isOutboundHalfClosureEnabled: true)
-                                )
+                            try! streamChannel.pipeline.syncOperations.addHandler(
+                                IncomingUnidirectionalStreamsChannelHandler(incomingUnidirectionalStreams: incomingUnidirectionalStreams)
                             )
                             return streamChannel.eventLoop.makeSucceededVoidFuture()
                         }
                     )
                     try connectionChannel.pipeline.syncOperations.addHandler(h3Handler)
                     try connectionChannel.pipeline.syncOperations.addHandler(
-                        IncomingDatagramsChannelHandler(incomingDatagramsContinuation: incomingDatagramsContinuation)
+                        IncomingDatagramsChannelHandler(incomingDatagrams: incomingDatagrams)
                     )
                     return connectionChannel
                 }
@@ -114,11 +111,8 @@ extension Channel {
                     }
                 switch QUICStreamID(rawValue: quicStreamID).type {
                 case .serverInitiatedBidirectional:
-                    incomingBidirectionalStreamsContinuation.yield(
-                        try! NIOAsyncChannel<ByteBuffer, ByteBuffer>(
-                            wrappingChannelSynchronously: streamChannel,
-                            configuration: .init(isOutboundHalfClosureEnabled: true)
-                        )
+                    try! streamChannel.pipeline.syncOperations.addHandler(
+                        IncomingBidirectionalStreamsChannelHandler(incomingBidirectionalStreams: incomingBidirectionalStreams)
                     )
                     return streamChannel.eventLoop.makeSucceededVoidFuture()
                 case .serverInitiatedUnidirectional, .clientInitiatedUnidirectional, .clientInitiatedBidirectional:

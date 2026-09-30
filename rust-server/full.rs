@@ -147,28 +147,37 @@ mod webtransport {
         }
 
         async fn handle_incoming_session(incoming_session: IncomingSession) {
-            // Reads and echoes every message sent on a bidirectional stream until it closes,
-            // so multiple writes on the same stream each receive their own echo.
-            async fn handle_bi_stream(
+            // Reads and echoes every message sent on a bidirectional stream until it closes, so
+            // multiple writes on the same stream each receive their own echo. Boxed because it
+            // recurses (via tokio::spawn) into itself for server-opened streams.
+            fn handle_bi_stream(
                 connection: wtransport::Connection,
                 mut stream: (wtransport::SendStream, wtransport::RecvStream),
-            ) -> Result<()> {
-                let mut buffer = vec![0; 65536].into_boxed_slice();
+            ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send>> {
+                Box::pin(async move {
+                    let mut buffer = vec![0; 65536].into_boxed_slice();
 
-                while let Some(bytes_read) = stream.1.read(&mut buffer).await? {
-                    let str_data = std::str::from_utf8(&buffer[..bytes_read])?;
+                    while let Some(bytes_read) = stream.1.read(&mut buffer).await? {
+                        let str_data = std::str::from_utf8(&buffer[..bytes_read])?;
 
-                    info!("Received (bi) '{str_data}' from client");
+                        info!("Received (bi) '{str_data}' from client");
 
-                    if str_data == "open" {
-                        let mut opened_stream = connection.open_bi().await?.await?;
-                        opened_stream.0.write_all(b"opened").await?;
-                    } else {
-                        stream.0.write_all(&buffer[..bytes_read]).await?;
+                        if str_data == "open" {
+                            let mut opened_stream = connection.open_bi().await?.await?;
+                            opened_stream.0.write_all(b"opened").await?;
+
+                            let connection = connection.clone();
+                            tokio::spawn(
+                                handle_bi_stream(connection, opened_stream)
+                                    .instrument(info_span!("BiStream")),
+                            );
+                        } else {
+                            stream.0.write_all(&buffer[..bytes_read]).await?;
+                        }
                     }
-                }
 
-                Ok(())
+                    Ok(())
+                })
             }
 
             async fn handle_incoming_session_impl(incoming_session: IncomingSession) -> Result<()> {

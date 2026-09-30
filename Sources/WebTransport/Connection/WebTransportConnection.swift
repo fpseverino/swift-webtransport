@@ -16,28 +16,23 @@ public final actor WebTransportConnection: Sendable {
     /// Used to open QUIC unidirectional and bidirectional streams
     private let h3Connection: HTTP3ClientConnection<Never, NIOQUIC.QUICStreamCreator>
 
-    /// An asynchronous sequence of unidirectional streams opened by the server.
-    /// Each one can be used to read data from the server.
-    private let incomingUnidirectionalStreams: WebTransportSession.IncomingUnidirectionalStreams
+    private let incomingUnidirectionalStreams: IncomingUnidirectionalStreams
 
-    /// An asynchronous sequence of bidirectional streams opened by the server.
-    /// Each one can be used to read data from the server and write data back to it.
-    private let incomingBidirectionalStreams: WebTransportSession.IncomingBidirectionalStreams
+    private let incomingBidirectionalStreams: IncomingBidirectionalStreams
 
     /// The channel used for sending HTTP Datagrams
     private let datagramChannel: any Channel
 
-    /// An asynchronous sequence of incoming datagrams
-    private let incomingDatagrams: AsyncStream<HTTP3Datagram>
+    private let incomingDatagrams: IncomingDatagrams
 
     init(
         ipAddress: String,
         port: Int,
         h3Connection: HTTP3ClientConnection<Never, NIOQUIC.QUICStreamCreator>,
-        incomingUnidirectionalStreams: WebTransportSession.IncomingUnidirectionalStreams,
-        incomingBidirectionalStreams: WebTransportSession.IncomingBidirectionalStreams,
+        incomingUnidirectionalStreams: IncomingUnidirectionalStreams,
+        incomingBidirectionalStreams: IncomingBidirectionalStreams,
         datagramChannel: any Channel,
-        incomingDatagrams: AsyncStream<HTTP3Datagram>
+        incomingDatagrams: IncomingDatagrams
     ) {
         self.ipAddress = ipAddress
         self.port = port
@@ -80,11 +75,7 @@ public final actor WebTransportConnection: Sendable {
     /// Create a new WebTransport session and run operations using it, then automatically terminate the session.
     ///
     /// - Parameters:
-    ///   - ipAddress: The IP address of the WebTransport server.
-    ///   - port: The port of the WebTransport server.
     ///   - configuration: The configuration for the WebTransport session.
-    ///   - eventLoopGroup: The `EventLoopGroup` to run the connection on.
-    ///   - logger: The logger to use for the session. Defaults to the current task-local logger.
     ///   - operation: The closure where WebTransport operations using the session are performed.
     ///
     /// - Returns: The value returned by the `operation` closure.
@@ -125,14 +116,25 @@ public final actor WebTransportConnection: Sendable {
                 throw WebTransportError.serverRejectedSession
             }
 
+            let sessionID = QUICStreamID(rawValue: try await asyncChannel.channel.getOption(.quicStreamID).get())
+
+            let (incomingUniStreams, incomingUniStreamsContinuation) = WebTransportSession.IncomingUnidirectionalStreams.makeStream()
+            self.incomingUnidirectionalStreams.addSession(id: sessionID, continuation: incomingUniStreamsContinuation)
+
+            let (incomingBiStreams, incomingBiStreamsContinuation) = WebTransportSession.IncomingBidirectionalStreams.makeStream()
+            self.incomingBidirectionalStreams.addSession(id: sessionID, continuation: incomingBiStreamsContinuation)
+
+            let (incomingDatagrams, incomingDatagramsContinuation) = AsyncStream<ByteBuffer>.makeStream()
+            self.incomingDatagrams.addSession(id: sessionID, continuation: incomingDatagramsContinuation)
+
             return try await operation(
                 WebTransportSession(
-                    sessionID: QUICStreamID(rawValue: try await asyncChannel.channel.getOption(.quicStreamID).get()),
+                    sessionID: sessionID,
                     h3Connection: self.h3Connection,
-                    incomingUnidirectionalStreams: self.incomingUnidirectionalStreams,
-                    incomingBidirectionalStreams: self.incomingBidirectionalStreams,
+                    incomingUnidirectionalStreams: incomingUniStreams,
+                    incomingBidirectionalStreams: incomingBiStreams,
                     datagramChannel: self.datagramChannel,
-                    incomingDatagrams: self.incomingDatagrams
+                    incomingDatagrams: incomingDatagrams
                 )
             )
         }

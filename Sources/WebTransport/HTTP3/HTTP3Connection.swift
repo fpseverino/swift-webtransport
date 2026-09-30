@@ -25,9 +25,9 @@ func withH3Connection<Value>(
     logger: Logger,
     body: (WebTransportConnection) async throws -> Value
 ) async throws -> Value {
-    let (incomingUnidirectionalStreams, incomingUnidirectionalStreamsContinuation) = WebTransportSession.IncomingUnidirectionalStreams.makeStream()
-    let (incomingBidirectionalStreams, incomingBidirectionalStreamsContinuation) = WebTransportSession.IncomingBidirectionalStreams.makeStream()
-    let (incomingDatagrams, incomingDatagramsContinuation) = AsyncStream<HTTP3Datagram>.makeStream()
+    let incomingUnidirectionalStreams = WebTransportConnection.IncomingUnidirectionalStreams()
+    let incomingBidirectionalStreams = WebTransportConnection.IncomingBidirectionalStreams()
+    let incomingDatagrams = WebTransportConnection.IncomingDatagrams()
 
     let (quicChannel, connectionCreator) = try await DatagramBootstrap(group: eventLoopGroup)
         .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
@@ -36,9 +36,9 @@ func withH3Connection<Value>(
                 let connectionCreator = try channel.makeConnectionCreator(
                     verificationConfiguration: verificationConfiguration,
                     logger: logger,
-                    incomingUnidirectionalStreamsContinuation: incomingUnidirectionalStreamsContinuation,
-                    incomingBidirectionalStreamsContinuation: incomingBidirectionalStreamsContinuation,
-                    incomingDatagramsContinuation: incomingDatagramsContinuation
+                    incomingUnidirectionalStreams: incomingUnidirectionalStreams,
+                    incomingBidirectionalStreams: incomingBidirectionalStreams,
+                    incomingDatagrams: incomingDatagrams
                 )
                 return (channel, NIOLoopBound(connectionCreator, eventLoop: channel.eventLoop))
             }

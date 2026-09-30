@@ -4,14 +4,14 @@ import NIOHTTP3
 final class IncomingDatagramsChannelHandler: ChannelInboundHandler {
     typealias InboundIn = HTTP3Datagram
 
-    let incomingDatagramsContinuation: AsyncStream<HTTP3Datagram>.Continuation
+    let incomingDatagrams: WebTransportConnection.IncomingDatagrams
 
-    init(incomingDatagramsContinuation: AsyncStream<HTTP3Datagram>.Continuation) {
-        self.incomingDatagramsContinuation = incomingDatagramsContinuation
+    init(incomingDatagrams: WebTransportConnection.IncomingDatagrams) {
+        self.incomingDatagrams = incomingDatagrams
     }
 
     func channelRead(context: ChannelHandlerContext, data: NIOAny) {
-        self.incomingDatagramsContinuation.yield(self.unwrapInboundIn(data))
+        self.incomingDatagrams.yieldDatagram(self.unwrapInboundIn(data))
         context.fireChannelRead(data)
     }
 }

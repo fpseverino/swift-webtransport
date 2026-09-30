@@ -186,26 +186,7 @@ func echoSession(sess *webtransport.Session) {
 				return
 			}
 			log.Printf("accepted bidirectional stream %d", stream.StreamID())
-			go func() {
-				defer stream.Close()
-				buffer := make([]byte, 32*1024)
-				for {
-					n, readErr := stream.Read(buffer)
-					if n > 0 {
-						log.Printf("received stream data: %q", buffer[:n])
-						if string(buffer[:n]) == "open" {
-							openServerStream(ctx, sess)
-						} else if _, writeErr := stream.Write(buffer[:n]); writeErr != nil {
-							log.Printf("writing stream echo failed: %v", writeErr)
-							return
-						}
-					}
-					if readErr != nil {
-						logReadError("reading stream", readErr)
-						return
-					}
-				}
-			}()
+			go echoStream(ctx, sess, stream)
 		}
 	}()
 
@@ -266,7 +247,31 @@ func logReadError(action string, err error) {
 	log.Printf("%s failed: %v", action, err)
 }
 
-// openServerStream opens a new server-initiated bidirectional stream in response to an "open" request.
+// echoStream reads from stream until it closes, echoing back any message it receives and
+// opening a new server-initiated bidirectional stream in response to an "open" message.
+func echoStream(ctx context.Context, sess *webtransport.Session, stream *webtransport.Stream) {
+	defer stream.Close()
+	buffer := make([]byte, 32*1024)
+	for {
+		n, readErr := stream.Read(buffer)
+		if n > 0 {
+			log.Printf("received stream data: %q", buffer[:n])
+			if string(buffer[:n]) == "open" {
+				openServerStream(ctx, sess)
+			} else if _, writeErr := stream.Write(buffer[:n]); writeErr != nil {
+				log.Printf("writing stream echo failed: %v", writeErr)
+				return
+			}
+		}
+		if readErr != nil {
+			logReadError("reading stream", readErr)
+			return
+		}
+	}
+}
+
+// openServerStream opens a new server-initiated bidirectional stream in response to an "open" request,
+// then keeps it open, echoing any further messages the client sends on it.
 func openServerStream(ctx context.Context, sess *webtransport.Session) {
 	stream, err := sess.OpenStreamSync(ctx)
 	if err != nil {
@@ -274,10 +279,12 @@ func openServerStream(ctx context.Context, sess *webtransport.Session) {
 		return
 	}
 	log.Printf("opened bidirectional stream %d", stream.StreamID())
-	defer stream.Close()
 	if _, err := stream.Write([]byte("opened")); err != nil {
 		log.Printf("writing to opened bidirectional stream failed: %v", err)
+		stream.Close()
+		return
 	}
+	go echoStream(ctx, sess, stream)
 }
 
 // openServerUniStream opens a new server-initiated unidirectional stream in response to an "open" request.

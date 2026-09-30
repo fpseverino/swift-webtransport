@@ -79,9 +79,7 @@ struct WebTransportSessionTests {
                         for await stream in await session.incomingUnidirectionalStreams {
                             try await stream.executeThenClose { inbound in
                                 for try await message in inbound {
-                                    print(String(buffer: message))
-                                    // TODO: remove the Session ID from the start of Unidirectional Streams
-                                    #expect(message == ByteBuffer(string: "\u{00}opened"))
+                                    #expect(message == ByteBuffer(string: "opened"))
                                     break
                                 }
                             }
@@ -96,11 +94,12 @@ struct WebTransportSessionTests {
 
                         for await stream in await session.incomingBidirectionalStreams {
                             try await stream.executeThenClose { inbound, outbound in
-                                for try await message in inbound {
-                                    print(String(buffer: message))
-                                    // TODO: remove Stream Type, Signal Value (0x41) and Session ID from the start of Bidirectional Streams
-                                    #expect(message == ByteBuffer(string: "\u{40}\u{41}\u{00}opened"))
-                                    break
+                                var iterator = inbound.makeAsyncIterator()
+                                #expect(try await iterator.next() == ByteBuffer(string: "opened"))
+                                for message in ["Hello again!", "Hi, mom!", "Bye bye!"] {
+                                    let payload = ByteBuffer(string: message)
+                                    try await outbound.write(payload)
+                                    #expect(try await iterator.next() == payload)
                                 }
                             }
                             break
@@ -128,7 +127,7 @@ struct WebTransportSessionTests {
                 try await session.sendDatagram(payload)
 
                 for await datagram in await session.incomingDatagrams {
-                    #expect(datagram.payload == payload)
+                    #expect(datagram == payload)
                     break
                 }
             }
@@ -149,7 +148,7 @@ struct WebTransportSessionTests {
                     ) { session in
                         try await session.sendDatagram(ByteBuffer(string: "Hello from the first session!"))
                         for await datagram in await session.incomingDatagrams {
-                            #expect(datagram.payload == ByteBuffer(string: "Hello from the first session!"))
+                            #expect(datagram == ByteBuffer(string: "Hello from the first session!"))
                             break
                         }
                     }
@@ -161,7 +160,7 @@ struct WebTransportSessionTests {
                     ) { session in
                         try await session.sendDatagram(ByteBuffer(string: "Hello from the second session!"))
                         for await datagram in await session.incomingDatagrams {
-                            #expect(datagram.payload == ByteBuffer(string: "Hello from the second session!"))
+                            #expect(datagram == ByteBuffer(string: "Hello from the second session!"))
                             break
                         }
                     }
