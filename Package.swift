@@ -18,7 +18,7 @@ let package = Package(
         // This fork publicly exposes the `QUICStreamCreator` of the `HTTP3ClientConnection`,
         // so we can create QUIC streams for WebTransport from the connection after the HTTP/3 handshake.
         // It also ignores errors and exposes the APIs needed for WebTransport incoming unidirectional streams.
-        .package(url: "https://github.com/fpseverino/swift-nio-http3.git", branch: "webtransport"),
+        .package(url: "https://github.com/fpseverino/swift-nio-http3.git", branch: "webtransport-client"),
         .package(url: "https://github.com/apple/swift-nio-quic.git", .upToNextMinor(from: "0.4.0")),
         .package(url: "https://github.com/apple/swift-nio-quic-helpers.git", .upToNextMinor(from: "0.1.1")),
         // Observability
