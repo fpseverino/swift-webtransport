@@ -8,6 +8,8 @@ DerivedData/
 .netrc
 Package.resolved
 
+.vscode
+
 /go-server/cert.pem
 
 /rust-server/target

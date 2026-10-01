@@ -56,6 +56,17 @@ let package = Package(
             ],
             swiftSettings: swiftSettings
         ),
+        .executableTarget(
+            name: "WebTransportExample",
+            dependencies: [
+                .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOPosix", package: "swift-nio"),
+                .product(name: "NIOQUIC", package: "swift-nio-quic"),
+                .product(name: "Logging", package: "swift-log"),
+                .target(name: "WebTransport"),
+            ],
+            swiftSettings: swiftSettings
+        ),
     ]
 )
 

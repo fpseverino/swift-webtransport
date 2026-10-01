@@ -2,14 +2,17 @@
 
 ### Testing
 
-The project tests expect the WebTransport Go server in the `/go-server` directory and the Rust server in the `/rust-server` directory to be running.
+The project tests expect both the WebTransport Go server in the `/go-server` directory and the Rust server in the `/rust-server` directory to be running.
+The Example target included in this package also requires the Go test server to be running.
 You can start them by running the commands:
 
 ```sh
+# Start the Go test server
 cd go-server && go run .
 ```
 
 ```sh
+# Start the Rust test server
 cd rust-server && cargo run
 ```
 
