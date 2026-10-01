@@ -1,3 +1,4 @@
+import HTTP3
 import HTTPTypes
 public import Logging
 public import NIOCore
@@ -16,6 +17,8 @@ public final actor WebTransportConnection: Sendable {
     /// Used to open QUIC unidirectional and bidirectional streams
     private let h3Connection: HTTP3ClientConnection<Never, NIOQUIC.QUICStreamCreator>
 
+    private let serverSettingsFuture: EventLoopFuture<HTTP3Settings>
+
     private let incomingUnidirectionalStreams: IncomingUnidirectionalStreams
 
     private let incomingBidirectionalStreams: IncomingBidirectionalStreams
@@ -29,6 +32,7 @@ public final actor WebTransportConnection: Sendable {
         ipAddress: String,
         port: Int,
         h3Connection: HTTP3ClientConnection<Never, NIOQUIC.QUICStreamCreator>,
+        serverSettingsFuture: EventLoopFuture<HTTP3Settings>,
         incomingUnidirectionalStreams: IncomingUnidirectionalStreams,
         incomingBidirectionalStreams: IncomingBidirectionalStreams,
         datagramChannel: any Channel,
@@ -37,6 +41,7 @@ public final actor WebTransportConnection: Sendable {
         self.ipAddress = ipAddress
         self.port = port
         self.h3Connection = h3Connection
+        self.serverSettingsFuture = serverSettingsFuture
         self.incomingUnidirectionalStreams = incomingUnidirectionalStreams
         self.incomingBidirectionalStreams = incomingBidirectionalStreams
         self.datagramChannel = datagramChannel
@@ -83,6 +88,10 @@ public final actor WebTransportConnection: Sendable {
         configuration: WebTransportSession.Configuration,
         operation: (WebTransportSession) async throws -> Value
     ) async throws -> Value {
+        guard try await self.serverSettingsFuture.get().serverSupportsWebTransport else {
+            throw WebTransportError.serverDoesNotSupportWebTransport
+        }
+
         let asyncChannel = try await self.h3Connection.makeRequestStream()
         return try await asyncChannel.executeThenClose { responseReader, requestWriter in
             var headerSerializer = StructuredFieldValueSerializer()

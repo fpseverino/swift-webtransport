@@ -1,3 +1,4 @@
+import HTTP3
 import Logging
 import NIOCore
 @_spi(HTTP3AsyncInterface) import NIOHTTP3
@@ -25,6 +26,8 @@ func withH3Connection<Value>(
     logger: Logger,
     body: (WebTransportConnection) async throws -> Value
 ) async throws -> Value {
+    let serverSettingsPromise = eventLoopGroup.any().makePromise(of: HTTP3Settings.self)
+
     let incomingUnidirectionalStreams = WebTransportConnection.IncomingUnidirectionalStreams()
     let incomingBidirectionalStreams = WebTransportConnection.IncomingBidirectionalStreams()
     let incomingDatagrams = WebTransportConnection.IncomingDatagrams()
@@ -36,6 +39,7 @@ func withH3Connection<Value>(
                 let connectionCreator = try channel.makeConnectionCreator(
                     verificationConfiguration: verificationConfiguration,
                     logger: logger,
+                    serverSettingsPromise: serverSettingsPromise,
                     incomingUnidirectionalStreams: incomingUnidirectionalStreams,
                     incomingBidirectionalStreams: incomingBidirectionalStreams,
                     incomingDatagrams: incomingDatagrams
@@ -68,6 +72,7 @@ func withH3Connection<Value>(
                 ipAddress: ipAddress,
                 port: port,
                 h3Connection: h3Connection,
+                serverSettingsFuture: serverSettingsPromise.futureResult,
                 incomingUnidirectionalStreams: incomingUnidirectionalStreams,
                 incomingBidirectionalStreams: incomingBidirectionalStreams,
                 datagramChannel: connectionChannel,

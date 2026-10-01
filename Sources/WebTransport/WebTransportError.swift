@@ -4,6 +4,8 @@ public struct WebTransportError: Error, Sendable, Equatable {
         enum Base: String, Sendable, Equatable {
             /// The server response to the HTTP CONNECT request was not 2xx.
             case serverRejectedSession
+            /// The server SETTINGS do not enable WebTransport over HTTP/3.
+            case serverDoesNotSupportWebTransport
         }
 
         let base: Base
@@ -14,6 +16,9 @@ public struct WebTransportError: Error, Sendable, Equatable {
 
         /// The server response to the HTTP CONNECT request was not 2xx.
         public static let serverRejectedSession = ErrorType(.serverRejectedSession)
+
+        /// The server SETTINGS do not enable WebTransport over HTTP/3.
+        public static let serverDoesNotSupportWebTransport = ErrorType(.serverDoesNotSupportWebTransport)
 
         public var description: String { self.base.rawValue }
     }
@@ -44,6 +49,9 @@ public struct WebTransportError: Error, Sendable, Equatable {
 
     /// The server response to the HTTP CONNECT request was not 2xx.
     public static let serverRejectedSession = WebTransportError(errorType: .serverRejectedSession)
+
+    /// The server SETTINGS do not enable WebTransport over HTTP/3.
+    public static let serverDoesNotSupportWebTransport = WebTransportError(errorType: .serverDoesNotSupportWebTransport)
 
     public static func == (lhs: WebTransportError, rhs: WebTransportError) -> Bool {
         lhs.backing == rhs.backing

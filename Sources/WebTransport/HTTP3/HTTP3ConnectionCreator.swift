@@ -47,6 +47,7 @@ extension Channel {
     func makeConnectionCreator(
         verificationConfiguration: VerificationConfiguration,
         logger: Logger,
+        serverSettingsPromise: EventLoopPromise<HTTP3Settings>,
         incomingUnidirectionalStreams: WebTransportConnection.IncomingUnidirectionalStreams,
         incomingBidirectionalStreams: WebTransportConnection.IncomingBidirectionalStreams,
         incomingDatagrams: WebTransportConnection.IncomingDatagrams
@@ -70,9 +71,9 @@ extension Channel {
                     let h3Handler = HTTP3ConnectionHandler.client(
                         eventLoop: connectionChannel.eventLoop,
                         configuration: .defaults,
-                        // TODO: also check SETTINGS received from the server
                         settings: try .init(parsing: [
                             .init(identifier: .h3Datagram, value: 1),
+                            // TODO: remove after WebTransport RFC is published
                             .init(identifier: .webTransportEnabled, value: 1),
                             // TODO: let the user set these
                             .init(identifier: .webTransportInitialMaximumStreamsUnidirectional, value: 100),
@@ -83,6 +84,11 @@ extension Channel {
                         logger: logger,
                         inboundPushStreamInitializer: { _ in fatalError() },
                         internalInboundStreamInitializer: { streamChannel, _, streamType in
+                            if case .control = streamType {
+                                try! streamChannel.pipeline.syncOperations.addHandler(
+                                    ServerHTTP3SettingsChannelHandler(settingsPromise: serverSettingsPromise)
+                                )
+                            }
                             guard
                                 case .unknown(let raw) = streamType,
                                 raw == 0x54
