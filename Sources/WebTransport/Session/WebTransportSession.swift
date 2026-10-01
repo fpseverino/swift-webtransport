@@ -9,24 +9,20 @@ import NIOQUICHelpers
 import RawStructuredFieldValues
 
 /// A single WebTransport session opened over an HTTP/3 connection.
-public final actor WebTransportSession: Sendable {
+public struct WebTransportSession: Sendable {
     /// The QUIC stream ID of the CONNECT stream that established the WebTransport session.
     private let sessionID: QUICStreamID
-
     /// Used to open QUIC unidirectional and bidirectional streams
     private let h3Connection: HTTP3ClientConnection<Never, NIOQUIC.QUICStreamCreator>
 
     /// An asynchronous sequence of unidirectional streams opened by the server.
     /// Each one can be used to read data from the server.
     public let incomingUnidirectionalStreams: IncomingUnidirectionalStreams
-
     /// An asynchronous sequence of bidirectional streams opened by the server.
     /// Each one can be used to read data from the server and write data back to it.
     public let incomingBidirectionalStreams: IncomingBidirectionalStreams
-
     /// The channel used for sending HTTP Datagrams
     private let datagramChannel: any Channel
-
     /// An asynchronous sequence of incoming datagrams
     public let incomingDatagrams: AsyncStream<ByteBuffer>
 

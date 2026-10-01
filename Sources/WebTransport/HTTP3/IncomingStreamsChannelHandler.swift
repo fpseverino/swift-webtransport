@@ -23,13 +23,19 @@ final class IncomingUnidirectionalStreamsChannelHandler: ChannelInboundHandler {
             return
         }
         self.didReadSessionID = true
-        self.incomingUnidirectionalStreams.yieldStream(
-            try! NIOAsyncChannel<ByteBuffer, Never>(
+
+        let asyncChannel: NIOAsyncChannel<ByteBuffer, Never>
+        do {
+            asyncChannel = try NIOAsyncChannel<ByteBuffer, Never>(
                 wrappingChannelSynchronously: context.channel,
                 configuration: .init(isOutboundHalfClosureEnabled: true)
-            ),
-            sessionID: QUICStreamID(rawValue: sessionID)
-        )
+            )
+        } catch {
+            context.fireErrorCaught(error)
+            return
+        }
+        self.incomingUnidirectionalStreams.yieldStream(asyncChannel, sessionID: QUICStreamID(rawValue: sessionID))
+
         if buffer.readableBytes > 0 {
             context.fireChannelRead(self.wrapInboundOut(buffer))
         }
@@ -62,13 +68,19 @@ final class IncomingBidirectionalStreamsChannelHandler: ChannelInboundHandler {
             return
         }
         self.didReadSessionID = true
-        self.incomingBidirectionalStreams.yieldStream(
-            try! NIOAsyncChannel<ByteBuffer, ByteBuffer>(
+
+        let asyncChannel: NIOAsyncChannel<ByteBuffer, ByteBuffer>
+        do {
+            asyncChannel = try NIOAsyncChannel<ByteBuffer, ByteBuffer>(
                 wrappingChannelSynchronously: context.channel,
                 configuration: .init(isOutboundHalfClosureEnabled: true)
-            ),
-            sessionID: QUICStreamID(rawValue: sessionID)
-        )
+            )
+        } catch {
+            context.fireErrorCaught(error)
+            return
+        }
+        self.incomingBidirectionalStreams.yieldStream(asyncChannel, sessionID: QUICStreamID(rawValue: sessionID))
+
         if buffer.readableBytes > 0 {
             context.fireChannelRead(self.wrapInboundOut(buffer))
         }

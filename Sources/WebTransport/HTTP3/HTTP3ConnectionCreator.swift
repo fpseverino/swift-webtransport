@@ -84,21 +84,20 @@ extension Channel {
                         logger: logger,
                         inboundPushStreamInitializer: { _ in fatalError() },
                         internalInboundStreamInitializer: { streamChannel, _, streamType in
-                            if case .control = streamType {
-                                try! streamChannel.pipeline.syncOperations.addHandler(
-                                    ServerHTTP3SettingsChannelHandler(settingsPromise: serverSettingsPromise)
-                                )
+                            streamChannel.eventLoop.makeCompletedFuture {
+                                switch streamType {
+                                case .control:
+                                    try streamChannel.pipeline.syncOperations.addHandler(
+                                        ServerHTTP3SettingsChannelHandler(serverSettingsPromise: serverSettingsPromise)
+                                    )
+                                case .unknown(let raw) where raw == 0x54:
+                                    try streamChannel.pipeline.syncOperations.addHandler(
+                                        IncomingUnidirectionalStreamsChannelHandler(incomingUnidirectionalStreams: incomingUnidirectionalStreams)
+                                    )
+                                case .push, .qpackEncoder, .qpackDecoder, .unknown:
+                                    break
+                                }
                             }
-                            guard
-                                case .unknown(let raw) = streamType,
-                                raw == 0x54
-                            else {
-                                return streamChannel.eventLoop.makeSucceededVoidFuture()
-                            }
-                            try! streamChannel.pipeline.syncOperations.addHandler(
-                                IncomingUnidirectionalStreamsChannelHandler(incomingUnidirectionalStreams: incomingUnidirectionalStreams)
-                            )
-                            return streamChannel.eventLoop.makeSucceededVoidFuture()
                         }
                     )
                     try connectionChannel.pipeline.syncOperations.addHandler(h3Handler)
@@ -109,25 +108,21 @@ extension Channel {
                 }
             },
             inboundStreamInitializer: { streamChannel in
-                let quicStreamID =
-                    if let sync = streamChannel.syncOptions {
-                        try! sync.getOption(.quicStreamID)
-                    } else {
-                        try! streamChannel.getOption(.quicStreamID).wait()
+                streamChannel.getOption(.quicStreamID).flatMap { quicStreamID in
+                    switch QUICStreamID(rawValue: quicStreamID).type {
+                    case .serverInitiatedBidirectional:
+                        streamChannel.eventLoop.makeCompletedFuture {
+                            try streamChannel.pipeline.syncOperations.addHandler(
+                                IncomingBidirectionalStreamsChannelHandler(incomingBidirectionalStreams: incomingBidirectionalStreams)
+                            )
+                        }
+                    case .serverInitiatedUnidirectional, .clientInitiatedUnidirectional, .clientInitiatedBidirectional:
+                        streamChannel.parent!.pipeline.handler(type: HTTP3ConnectionHandler<NIOQUIC.QUICStreamCreator>.self)
+                            .flatMap { http3Handler in
+                                http3Handler.inboundStreamReceived(streamChannel)
+                            }
                     }
-                switch QUICStreamID(rawValue: quicStreamID).type {
-                case .serverInitiatedBidirectional:
-                    try! streamChannel.pipeline.syncOperations.addHandler(
-                        IncomingBidirectionalStreamsChannelHandler(incomingBidirectionalStreams: incomingBidirectionalStreams)
-                    )
-                    return streamChannel.eventLoop.makeSucceededVoidFuture()
-                case .serverInitiatedUnidirectional, .clientInitiatedUnidirectional, .clientInitiatedBidirectional:
-                    break
                 }
-                return streamChannel.parent!.pipeline.handler(type: HTTP3ConnectionHandler<NIOQUIC.QUICStreamCreator>.self)
-                    .flatMap { http3Handler in
-                        http3Handler.inboundStreamReceived(streamChannel)
-                    }
             },
             connectionChannelPromise: self.eventLoop.makePromise()
         )

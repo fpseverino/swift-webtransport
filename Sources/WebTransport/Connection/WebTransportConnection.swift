@@ -10,22 +10,18 @@ import NIOQUICHelpers
 import RawStructuredFieldValues
 
 /// A single connection to a WebTransport server.
-public final actor WebTransportConnection: Sendable {
+public struct WebTransportConnection: Sendable {
     private let ipAddress: String
     private let port: Int
 
     /// Used to open QUIC unidirectional and bidirectional streams
     private let h3Connection: HTTP3ClientConnection<Never, NIOQUIC.QUICStreamCreator>
-
     private let serverSettingsFuture: EventLoopFuture<HTTP3Settings>
 
     private let incomingUnidirectionalStreams: IncomingUnidirectionalStreams
-
     private let incomingBidirectionalStreams: IncomingBidirectionalStreams
-
     /// The channel used for sending HTTP Datagrams
     private let datagramChannel: any Channel
-
     private let incomingDatagrams: IncomingDatagrams
 
     init(

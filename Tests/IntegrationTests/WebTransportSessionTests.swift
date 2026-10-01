@@ -75,7 +75,7 @@ struct WebTransportSessionTests {
                             try await outbound.write(ByteBuffer(string: "open"))
                         }
 
-                        for await stream in await session.incomingUnidirectionalStreams {
+                        for await stream in session.incomingUnidirectionalStreams {
                             try await stream.executeThenClose { inbound in
                                 for try await message in inbound {
                                     #expect(message == ByteBuffer(string: "opened"))
@@ -91,7 +91,7 @@ struct WebTransportSessionTests {
                             try await outbound.write(ByteBuffer(string: "open"))
                         }
 
-                        for await stream in await session.incomingBidirectionalStreams {
+                        for await stream in session.incomingBidirectionalStreams {
                             try await stream.executeThenClose { inbound, outbound in
                                 var iterator = inbound.makeAsyncIterator()
                                 #expect(try await iterator.next() == ByteBuffer(string: "opened"))
@@ -125,7 +125,7 @@ struct WebTransportSessionTests {
 
                 try await session.sendDatagram(payload)
 
-                for await datagram in await session.incomingDatagrams {
+                for await datagram in session.incomingDatagrams {
                     #expect(datagram == payload)
                     break
                 }
@@ -146,7 +146,7 @@ struct WebTransportSessionTests {
                         configuration: .init(applicationProtocols: ["webtransport-test"], urlPath: "/webtransport")
                     ) { session in
                         try await session.sendDatagram(ByteBuffer(string: "Hello from the first session!"))
-                        for await datagram in await session.incomingDatagrams {
+                        for await datagram in session.incomingDatagrams {
                             #expect(datagram == ByteBuffer(string: "Hello from the first session!"))
                             break
                         }
@@ -158,7 +158,7 @@ struct WebTransportSessionTests {
                         configuration: .init(applicationProtocols: ["webtransport-test-2"], urlPath: "/webtransport")
                     ) { session in
                         try await session.sendDatagram(ByteBuffer(string: "Hello from the second session!"))
-                        for await datagram in await session.incomingDatagrams {
+                        for await datagram in session.incomingDatagrams {
                             #expect(datagram == ByteBuffer(string: "Hello from the second session!"))
                             break
                         }
