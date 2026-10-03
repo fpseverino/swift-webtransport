@@ -6,6 +6,8 @@ public struct WebTransportError: Error, Sendable, Equatable {
             case serverRejectedSession
             /// The server SETTINGS do not enable WebTransport over HTTP/3.
             case serverDoesNotSupportWebTransport
+            /// The client received a `WT-Protocol` value that was not included in its `WT-Available-Protocols` list
+            case applicationProtocolNegotiationFailed
         }
 
         let base: Base
@@ -19,6 +21,9 @@ public struct WebTransportError: Error, Sendable, Equatable {
 
         /// The server SETTINGS do not enable WebTransport over HTTP/3.
         public static let serverDoesNotSupportWebTransport = ErrorType(.serverDoesNotSupportWebTransport)
+
+        /// The client received a `WT-Protocol` value that was not included in its `WT-Available-Protocols` list
+        public static let applicationProtocolNegotiationFailed = ErrorType(.applicationProtocolNegotiationFailed)
 
         public var description: String { self.base.rawValue }
     }
@@ -52,6 +57,9 @@ public struct WebTransportError: Error, Sendable, Equatable {
 
     /// The server SETTINGS do not enable WebTransport over HTTP/3.
     public static let serverDoesNotSupportWebTransport = WebTransportError(errorType: .serverDoesNotSupportWebTransport)
+
+    /// The client received a `WT-Protocol` value that was not included in its `WT-Available-Protocols` list
+    public static let applicationProtocolNegotiationFailed = WebTransportError(errorType: .applicationProtocolNegotiationFailed)
 
     public static func == (lhs: WebTransportError, rhs: WebTransportError) -> Bool {
         lhs.backing == rhs.backing

@@ -44,6 +44,7 @@ extension HTTP3Settings {
 
         // TODO: Also require SETTINGS_ENABLE_CONNECT_PROTOCOL when swift-nio-http3 exposes remote settings
         // https://github.com/apple/swift-nio-http3/pull/65
+        // https://github.com/apple/swift-nio-http3/pull/69
         // TODO: The Rust server does not yet send the SETTINGS_WT_ENABLED setting, so for now we don't check it.
         // https://github.com/BiagioFesta/wtransport/issues/332
 

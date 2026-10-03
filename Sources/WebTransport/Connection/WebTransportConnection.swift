@@ -90,22 +90,26 @@ public struct WebTransportConnection: Sendable {
 
         let asyncChannel = try await self.h3Connection.makeRequestStream()
         return try await asyncChannel.executeThenClose { responseReader, requestWriter in
-            var headerSerializer = StructuredFieldValueSerializer()
-            var connectRequest = HTTPRequest(
-                method: .connect,
-                scheme: "https",
-                authority: "\(self.ipAddress):\(self.port)",
-                path: configuration.urlPath,
-                headerFields: try .init(parsedTrailerFields: [
-                    .init(
+            var headerFields: HTTPFields = [:]
+            if !configuration.applicationProtocols.isEmpty {
+                var headerSerializer = StructuredFieldValueSerializer()
+                headerFields.append(
+                    HTTPField(
                         name: .init("WT-Available-Protocols")!,
-                        value: headerSerializer.writeListFieldValue(
+                        value: try headerSerializer.writeListFieldValue(
                             configuration.applicationProtocols.map {
                                 .item(.init(bareItem: RFC9651BareItem.string($0), parameters: [:]))
                             }
                         )
                     )
-                ])
+                )
+            }
+            var connectRequest = HTTPRequest(
+                method: .connect,
+                scheme: "https",
+                authority: "\(self.ipAddress):\(self.port)",
+                path: configuration.urlPath,
+                headerFields: headerFields
             )
             // TODO: this isn't set to "webtransport-h3" to support servers that haven't implemented newer drafts of the WebTransport protocol.
             // https://github.com/BiagioFesta/wtransport/issues/328
@@ -119,6 +123,24 @@ public struct WebTransportConnection: Sendable {
                 response.status.kind == .successful
             else {
                 throw WebTransportError.serverRejectedSession
+            }
+
+            let applicationProtocol: String?
+            if let headerValue = response.headerFields[.init("WT-Protocol")!] {
+                var headerParser = StructuredFieldValueParser(Array(headerValue.utf8))
+                if let item = try? headerParser.parseItemFieldValue(), case .string(let value) = item.rfc9651BareItem {
+                    applicationProtocol = value
+                } else {
+                    applicationProtocol = nil
+                }
+            } else {
+                applicationProtocol = nil
+            }
+
+            if let applicationProtocol {
+                guard configuration.applicationProtocols.contains(applicationProtocol) else {
+                    throw WebTransportError.applicationProtocolNegotiationFailed
+                }
             }
 
             let sessionID = QUICStreamID(rawValue: try await asyncChannel.channel.getOption(.quicStreamID).get())
@@ -135,6 +157,7 @@ public struct WebTransportConnection: Sendable {
             return try await operation(
                 WebTransportSession(
                     sessionID: sessionID,
+                    applicationProtocol: applicationProtocol,
                     h3Connection: self.h3Connection,
                     incomingUnidirectionalStreams: incomingUniStreams,
                     incomingBidirectionalStreams: incomingBiStreams,

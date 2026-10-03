@@ -8,6 +8,48 @@ import WebTransport
 
 @Suite("WebTransportSession Tests")
 struct WebTransportSessionTests {
+    @Test("Application Protocol Negotiation", arguments: TestWTServer.allCases)
+    func applicationProtocolNegotiation(server: TestWTServer) async throws {
+        try await WebTransportConnection.withConnection(
+            ipAddress: "127.0.0.1",
+            port: server.port,
+            verificationConfiguration: .x509Certificates(trustRootsFilePath: server.trustRootsFilePath)
+        ) { connection in
+            try await connection.withSession(
+                configuration: .init(applicationProtocols: ["webtransport-test", "webtransport-test-2"], urlPath: "/webtransport")
+            ) { session in
+                switch server {
+                case .go:
+                    #expect(session.applicationProtocol == "webtransport-test")
+                case .rust:
+                    // The Rust server does not negotiate the application protocol
+                    #expect(session.applicationProtocol == nil)
+                }
+            }
+
+        }
+
+        try await WebTransportConnection.withConnection(
+            ipAddress: "127.0.0.1",
+            port: server.port,
+            verificationConfiguration: .x509Certificates(trustRootsFilePath: server.trustRootsFilePath)
+        ) { connection in
+            try await connection.withSession(configuration: .init(urlPath: "/webtransport")) { session in
+                #expect(session.applicationProtocol == nil)
+            }
+        }
+
+        try await WebTransportConnection.withConnection(
+            ipAddress: "127.0.0.1",
+            port: server.port,
+            verificationConfiguration: .x509Certificates(trustRootsFilePath: server.trustRootsFilePath)
+        ) { connection in
+            try await connection.withSession(configuration: .init(applicationProtocols: ["unknown"], urlPath: "/webtransport")) { session in
+                #expect(session.applicationProtocol == nil)
+            }
+        }
+    }
+
     @Test("Open Streams", arguments: TestWTServer.allCases)
     func openStreams(server: TestWTServer) async throws {
         try await WebTransportConnection.withConnection(

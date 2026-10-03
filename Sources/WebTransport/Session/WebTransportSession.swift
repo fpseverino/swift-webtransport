@@ -12,6 +12,10 @@ import RawStructuredFieldValues
 public struct WebTransportSession: Sendable {
     /// The QUIC stream ID of the CONNECT stream that established the WebTransport session.
     private let sessionID: QUICStreamID
+    /// A string representing the application-specific protocol selected by the server, or `nil` if none has been selected.
+    ///
+    /// Client preferences for the protocol are passed to the session configuration in the ``WebTransportSession/Configuration/applicationProtocols`` option.
+    public let applicationProtocol: String?
     /// Used to open QUIC unidirectional and bidirectional streams
     private let h3Connection: HTTP3ClientConnection<Never, NIOQUIC.QUICStreamCreator>
 
@@ -28,6 +32,7 @@ public struct WebTransportSession: Sendable {
 
     init(
         sessionID: QUICStreamID,
+        applicationProtocol: String?,
         h3Connection: HTTP3ClientConnection<Never, NIOQUIC.QUICStreamCreator>,
         incomingUnidirectionalStreams: IncomingUnidirectionalStreams,
         incomingBidirectionalStreams: IncomingBidirectionalStreams,
@@ -35,6 +40,7 @@ public struct WebTransportSession: Sendable {
         incomingDatagrams: AsyncStream<ByteBuffer>
     ) {
         self.sessionID = sessionID
+        self.applicationProtocol = applicationProtocol
         self.h3Connection = h3Connection
         self.incomingUnidirectionalStreams = incomingUnidirectionalStreams
         self.incomingBidirectionalStreams = incomingBidirectionalStreams
