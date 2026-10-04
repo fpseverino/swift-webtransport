@@ -44,10 +44,6 @@ public struct WebTransportError: Error, Sendable, Equatable {
 
     public var errorType: ErrorType { self.backing.errorType }
 
-    private init(backing: Backing) {
-        self.backing = backing
-    }
-
     private init(errorType: ErrorType) {
         self.backing = .init(errorType: errorType)
     }
