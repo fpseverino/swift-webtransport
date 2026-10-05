@@ -32,42 +32,44 @@ jobs:
           xcode-version: latest-stable
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.27'
-      - name: Start Go WebTransport Server
+      - name: Start Go WebTransport server
         run: |
           cd go-server
           go build -o server
           ./server &
-      - name: Start Rust WebTransport Server
+      - name: Start Rust WebTransport server
         run: |
           cd rust-server
           cargo build --release
           ./target/release/rust-server &
-      - name: Wait for WebTransport Servers (UDP Healthcheck)
+      - name: Wait for WebTransport servers
         run: |
           echo "Checking whether UDP ports for HTTP/3 are enabled..."
-          
+
           # Retry loop for a maximum of 15 seconds
           for i in {1..15}; do
             # Check if UDP sockets on ports 6121 and 4433 are open
             GO_READY=$(lsof -i UDP:6121)
             RUST_READY=$(lsof -i UDP:4433)
-            
+
             if [ ! -z "$GO_READY" ] && [ ! -z "$RUST_READY" ]; then
               echo "Both servers are ready!"
               echo "Go Server (6121): $GO_READY"
               echo "Rust Server (4433): $RUST_READY"
               exit 0
             fi
-            
+
             echo "Servers are not responding on UDP yet, waiting 1 second... ($i/15)"
             sleep 1
           done
-          
+
           echo "Error: One or both WebTransport servers did not start correctly."
           exit 1
-      - name: Run Swift Client Tests
+      - name: Swift test
         run: swift test
