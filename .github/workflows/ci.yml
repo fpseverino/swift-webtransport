@@ -1,0 +1,152 @@
+name: CI
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+# We will cancel previously triggered workflow runs
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-ci
+  cancel-in-progress: true
+
+jobs:
+  soundness:
+    name: Soundness
+    uses: swiftlang/github-workflows/.github/workflows/soundness.yml@0.0.15
+    with:
+      license_header_check_enabled: false
+      docs_check_container_image: "swift:6.3"
+      api_breakage_check_enabled: false
+      format_check_container_image: "swift:6.3"
+
+  macos-tests:
+    name: macOS tests
+    strategy:
+      matrix:
+        macos-version:
+          - macos-26
+          - xcode-27
+    runs-on: ${{ matrix.macos-version }}
+    timeout-minutes: 60
+    steps:
+      - name: Select appropriate Xcode version
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+      - name: Start Go WebTransport server
+        run: |
+          cd go-server
+          go build -o server
+          ./server &
+      - name: Start Rust WebTransport server
+        run: |
+          cd rust-server
+          cargo build --release
+          ./target/release/rust-server &
+      - name: Wait for WebTransport servers
+        run: |
+          echo "Checking whether UDP ports for HTTP/3 are enabled..."
+
+          # Retry loop for a maximum of 15 seconds
+          for i in {1..15}; do
+            # Check if UDP sockets on ports 6121 and 4433 are open
+            GO_READY=$(lsof -i UDP:6121)
+            RUST_READY=$(lsof -i UDP:4433)
+
+            if [ ! -z "$GO_READY" ] && [ ! -z "$RUST_READY" ]; then
+              echo "Both servers are ready!"
+              echo "Go Server (6121): $GO_READY"
+              echo "Rust Server (4433): $RUST_READY"
+              exit 0
+            fi
+
+            echo "Servers are not responding on UDP yet, waiting 1 second... ($i/15)"
+            sleep 1
+          done
+
+          echo "Error: One or both WebTransport servers did not start correctly."
+          exit 1
+      - name: Swift test
+        run: swift test
+
+  linux-tests:
+    name: Linux tests
+    strategy:
+      matrix:
+        swift-version:
+          - '6.3'
+          - '6.4'
+    runs-on: ubuntu-latest
+    container:
+      image: swift:${{ matrix.swift-version }}
+    timeout-minutes: 60
+    steps:
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends lsof curl ca-certificates build-essential
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Start Go WebTransport server
+        run: |
+          cd go-server
+          go build -buildvcs=false -o server
+          ./server > "$GITHUB_WORKSPACE/go-server.log" 2>&1 &
+      - name: Start Rust WebTransport server
+        run: |
+          cd rust-server
+          cargo build --release
+          RUST_LOG=debug ./target/release/rust-server > "$GITHUB_WORKSPACE/rust-server.log" 2>&1 &
+      - name: Wait for WebTransport servers
+        shell: bash
+        run: |
+          echo "Checking whether UDP ports for HTTP/3 are enabled..."
+
+          for i in {1..15}; do
+            GO_READY=$(lsof -i UDP:6121 || true)
+            RUST_READY=$(lsof -i UDP:4433 || true)
+
+            if [ ! -z "$GO_READY" ] && [ ! -z "$RUST_READY" ]; then
+              echo "Both servers are ready!"
+              echo "Go Server (6121): $GO_READY"
+              echo "Rust Server (4433): $RUST_READY"
+              exit 0
+            fi
+
+            echo "Servers are not responding on UDP yet, waiting 1 second... ($i/15)"
+            sleep 1
+          done
+
+          echo "Error: One or both WebTransport servers did not start correctly."
+          exit 1
+      - name: Swift test
+        run: swift test
+      - name: Print WebTransport server logs
+        if: failure()
+        run: |
+          for f in go-server.log rust-server.log; do
+            echo "::group::$f"
+            cat "$GITHUB_WORKSPACE/$f" || true
+            echo "::endgroup::"
+          done

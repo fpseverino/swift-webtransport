@@ -27,6 +27,9 @@ func withH3Connection<Value>(
     body: (WebTransportConnection) async throws -> Value
 ) async throws -> Value {
     let serverSettingsPromise = eventLoopGroup.any().makePromise(of: HTTP3Settings.self)
+    // If the connection fails before the server settings arrive, the promise must still be completed;
+    // this is a no-op when it has already been completed.
+    defer { serverSettingsPromise.fail(ChannelError.ioOnClosedChannel) }
 
     let incomingUnidirectionalStreams = WebTransportConnection.IncomingUnidirectionalStreams()
     let incomingBidirectionalStreams = WebTransportConnection.IncomingBidirectionalStreams()
