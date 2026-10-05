@@ -73,3 +73,59 @@ jobs:
           exit 1
       - name: Swift test
         run: swift test
+
+  linux-tests:
+    name: Linux tests
+    strategy:
+      matrix:
+        swift-version:
+          - '6.3'
+          - '6.4'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Setup Swift
+        uses: swift-actions/setup-swift@364295d9c23900ce04d4e5cc708387921b4e50f9
+        with:
+          swift-version: ${{ matrix.swift-version }}
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+      - name: Start Go WebTransport server
+        run: |
+          cd go-server
+          go build -o server
+          ./server &
+      - name: Start Rust WebTransport server
+        run: |
+          cd rust-server
+          cargo build --release
+          ./target/release/rust-server &
+      - name: Wait for WebTransport servers
+        run: |
+          echo "Checking whether UDP ports for HTTP/3 are enabled..."
+
+          for i in {1..15}; do
+            GO_READY=$(lsof -i UDP:6121 || true)
+            RUST_READY=$(lsof -i UDP:4433 || true)
+
+            if [ ! -z "$GO_READY" ] && [ ! -z "$RUST_READY" ]; then
+              echo "Both servers are ready!"
+              echo "Go Server (6121): $GO_READY"
+              echo "Rust Server (4433): $RUST_READY"
+              exit 0
+            fi
+
+            echo "Servers are not responding on UDP yet, waiting 1 second... ($i/15)"
+            sleep 1
+          done
+
+          echo "Error: One or both WebTransport servers did not start correctly."
+          exit 1
+      - name: Swift test
+        run: swift test
