@@ -5,15 +5,11 @@ permissions:
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
-    branches:
-      - main
-  release:
-    types: [published]
-  workflow_dispatch:
+    types: [opened, reopened, synchronize]
 
+# We will cancel previously triggered workflow runs
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-ci
   cancel-in-progress: true
@@ -115,7 +111,7 @@ jobs:
       - name: Start Go WebTransport server
         run: |
           cd go-server
-          go build -o server
+          go build -buildvcs=false -o server
           ./server &
       - name: Start Rust WebTransport server
         run: |
