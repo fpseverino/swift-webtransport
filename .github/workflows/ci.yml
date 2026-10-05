@@ -112,13 +112,14 @@ jobs:
         run: |
           cd go-server
           go build -buildvcs=false -o server
-          ./server &
+          ./server > "$GITHUB_WORKSPACE/go-server.log" 2>&1 &
       - name: Start Rust WebTransport server
         run: |
           cd rust-server
           cargo build --release
-          ./target/release/rust-server &
+          RUST_LOG=debug ./target/release/rust-server > "$GITHUB_WORKSPACE/rust-server.log" 2>&1 &
       - name: Wait for WebTransport servers
+        shell: bash
         run: |
           echo "Checking whether UDP ports for HTTP/3 are enabled..."
 
@@ -141,3 +142,11 @@ jobs:
           exit 1
       - name: Swift test
         run: swift test
+      - name: Print WebTransport server logs
+        if: failure()
+        run: |
+          for f in go-server.log rust-server.log; do
+            echo "::group::$f"
+            cat "$GITHUB_WORKSPACE/$f" || true
+            echo "::endgroup::"
+          done
