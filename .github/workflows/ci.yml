@@ -1,10 +1,22 @@
-name: PR
+name: CI
 
 permissions:
   contents: read
 
 on:
+  push:
+    branches:
+      - main
   pull_request:
+    branches:
+      - main
+  release:
+    types: [published]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-ci
+  cancel-in-progress: true
 
 jobs:
   soundness:
@@ -82,20 +94,24 @@ jobs:
           - '6.3'
           - '6.4'
     runs-on: ubuntu-latest
+    container:
+      image: swift:${{ matrix.swift-version }}
     timeout-minutes: 60
     steps:
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends lsof curl ca-certificates build-essential
       - name: Checkout repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
-      - name: Setup Swift
-        uses: swift-actions/setup-swift@364295d9c23900ce04d4e5cc708387921b4e50f9
-        with:
-          swift-version: ${{ matrix.swift-version }}
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.27'
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
       - name: Start Go WebTransport server
         run: |
           cd go-server
