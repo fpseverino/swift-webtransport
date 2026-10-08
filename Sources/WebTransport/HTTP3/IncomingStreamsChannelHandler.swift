@@ -5,10 +5,10 @@ final class IncomingUnidirectionalStreamsChannelHandler: ChannelInboundHandler {
     typealias InboundIn = ByteBuffer
     typealias InboundOut = ByteBuffer
 
-    let incomingUnidirectionalStreams: WebTransportConnection.IncomingUnidirectionalStreams
+    let incomingUnidirectionalStreams: WebTransportConnection.IncomingStreamsAndDatagrams
     private var didReadSessionID = false
 
-    init(incomingUnidirectionalStreams: WebTransportConnection.IncomingUnidirectionalStreams) {
+    init(incomingUnidirectionalStreams: WebTransportConnection.IncomingStreamsAndDatagrams) {
         self.incomingUnidirectionalStreams = incomingUnidirectionalStreams
     }
 
@@ -34,7 +34,7 @@ final class IncomingUnidirectionalStreamsChannelHandler: ChannelInboundHandler {
             context.fireErrorCaught(error)
             return
         }
-        self.incomingUnidirectionalStreams.yieldStream(asyncChannel, sessionID: QUICStreamID(rawValue: sessionID))
+        self.incomingUnidirectionalStreams.yieldUnidirectionalStream(asyncChannel, sessionID: QUICStreamID(rawValue: sessionID))
 
         if buffer.readableBytes > 0 {
             context.fireChannelRead(self.wrapInboundOut(buffer))
@@ -46,10 +46,10 @@ final class IncomingBidirectionalStreamsChannelHandler: ChannelInboundHandler {
     typealias InboundIn = ByteBuffer
     typealias InboundOut = ByteBuffer
 
-    let incomingBidirectionalStreams: WebTransportConnection.IncomingBidirectionalStreams
+    let incomingBidirectionalStreams: WebTransportConnection.IncomingStreamsAndDatagrams
     private var didReadSessionID = false
 
-    init(incomingBidirectionalStreams: WebTransportConnection.IncomingBidirectionalStreams) {
+    init(incomingBidirectionalStreams: WebTransportConnection.IncomingStreamsAndDatagrams) {
         self.incomingBidirectionalStreams = incomingBidirectionalStreams
     }
 
@@ -79,7 +79,7 @@ final class IncomingBidirectionalStreamsChannelHandler: ChannelInboundHandler {
             context.fireErrorCaught(error)
             return
         }
-        self.incomingBidirectionalStreams.yieldStream(asyncChannel, sessionID: QUICStreamID(rawValue: sessionID))
+        self.incomingBidirectionalStreams.yieldBidirectionalStream(asyncChannel, sessionID: QUICStreamID(rawValue: sessionID))
 
         if buffer.readableBytes > 0 {
             context.fireChannelRead(self.wrapInboundOut(buffer))

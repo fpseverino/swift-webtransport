@@ -4,9 +4,9 @@ import NIOHTTP3
 final class IncomingDatagramsChannelHandler: ChannelInboundHandler {
     typealias InboundIn = HTTP3Datagram
 
-    let incomingDatagrams: WebTransportConnection.IncomingDatagrams
+    let incomingDatagrams: WebTransportConnection.IncomingStreamsAndDatagrams
 
-    init(incomingDatagrams: WebTransportConnection.IncomingDatagrams) {
+    init(incomingDatagrams: WebTransportConnection.IncomingStreamsAndDatagrams) {
         self.incomingDatagrams = incomingDatagrams
     }
 

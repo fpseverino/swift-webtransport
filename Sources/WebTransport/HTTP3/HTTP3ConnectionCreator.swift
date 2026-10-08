@@ -48,9 +48,7 @@ extension Channel {
         configuration: WebTransportConnection.Configuration,
         logger: Logger,
         serverSettingsPromise: EventLoopPromise<HTTP3Settings>,
-        incomingUnidirectionalStreams: WebTransportConnection.IncomingUnidirectionalStreams,
-        incomingBidirectionalStreams: WebTransportConnection.IncomingBidirectionalStreams,
-        incomingDatagrams: WebTransportConnection.IncomingDatagrams
+        incomingStreamsAndDatagrams: WebTransportConnection.IncomingStreamsAndDatagrams
     ) throws -> TestHTTP3SingleConnectionCreator {
         let (quicHandler, _) = try QUICHandler.makeHandlerAndConnectionMultiplexer(
             channel: self,
@@ -100,7 +98,7 @@ extension Channel {
                                     )
                                 case .unknown(let raw) where raw == 0x54:
                                     try streamChannel.pipeline.syncOperations.addHandler(
-                                        IncomingUnidirectionalStreamsChannelHandler(incomingUnidirectionalStreams: incomingUnidirectionalStreams)
+                                        IncomingUnidirectionalStreamsChannelHandler(incomingUnidirectionalStreams: incomingStreamsAndDatagrams)
                                     )
                                 case .push, .qpackEncoder, .qpackDecoder, .unknown:
                                     break
@@ -110,7 +108,7 @@ extension Channel {
                     )
                     try connectionChannel.pipeline.syncOperations.addHandler(h3Handler)
                     try connectionChannel.pipeline.syncOperations.addHandler(
-                        IncomingDatagramsChannelHandler(incomingDatagrams: incomingDatagrams)
+                        IncomingDatagramsChannelHandler(incomingDatagrams: incomingStreamsAndDatagrams)
                     )
                     return connectionChannel
                 }
@@ -121,7 +119,7 @@ extension Channel {
                     case .serverInitiatedBidirectional:
                         streamChannel.eventLoop.makeCompletedFuture {
                             try streamChannel.pipeline.syncOperations.addHandler(
-                                IncomingBidirectionalStreamsChannelHandler(incomingBidirectionalStreams: incomingBidirectionalStreams)
+                                IncomingBidirectionalStreamsChannelHandler(incomingBidirectionalStreams: incomingStreamsAndDatagrams)
                             )
                         }
                     case .serverInitiatedUnidirectional, .clientInitiatedUnidirectional, .clientInitiatedBidirectional:

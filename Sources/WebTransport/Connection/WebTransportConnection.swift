@@ -18,30 +18,24 @@ public struct WebTransportConnection: Sendable {
     private let h3Connection: HTTP3ClientConnection<Never, NIOQUIC.QUICStreamCreator>
     private let serverSettingsFuture: EventLoopFuture<HTTP3Settings>
 
-    private let incomingUnidirectionalStreams: IncomingUnidirectionalStreams
-    private let incomingBidirectionalStreams: IncomingBidirectionalStreams
+    private let incomingStreamsAndDatagrams: IncomingStreamsAndDatagrams
     /// The channel used for sending HTTP Datagrams
     private let datagramChannel: any Channel
-    private let incomingDatagrams: IncomingDatagrams
 
     init(
         ipAddress: String,
         port: Int,
         h3Connection: HTTP3ClientConnection<Never, NIOQUIC.QUICStreamCreator>,
         serverSettingsFuture: EventLoopFuture<HTTP3Settings>,
-        incomingUnidirectionalStreams: IncomingUnidirectionalStreams,
-        incomingBidirectionalStreams: IncomingBidirectionalStreams,
-        datagramChannel: any Channel,
-        incomingDatagrams: IncomingDatagrams
+        incomingStreamsAndDatagrams: IncomingStreamsAndDatagrams,
+        datagramChannel: any Channel
     ) {
         self.ipAddress = ipAddress
         self.port = port
         self.h3Connection = h3Connection
         self.serverSettingsFuture = serverSettingsFuture
-        self.incomingUnidirectionalStreams = incomingUnidirectionalStreams
-        self.incomingBidirectionalStreams = incomingBidirectionalStreams
+        self.incomingStreamsAndDatagrams = incomingStreamsAndDatagrams
         self.datagramChannel = datagramChannel
-        self.incomingDatagrams = incomingDatagrams
     }
 
     /// Connect to the WebTransport server and run operations using the connection, then automatically close the connection.
@@ -146,13 +140,14 @@ public struct WebTransportConnection: Sendable {
             let sessionID = QUICStreamID(rawValue: try await asyncChannel.channel.getOption(.quicStreamID).get())
 
             let (incomingUniStreams, incomingUniStreamsContinuation) = WebTransportSession.IncomingUnidirectionalStreams.makeStream()
-            self.incomingUnidirectionalStreams.addSession(id: sessionID, continuation: incomingUniStreamsContinuation)
-
             let (incomingBiStreams, incomingBiStreamsContinuation) = WebTransportSession.IncomingBidirectionalStreams.makeStream()
-            self.incomingBidirectionalStreams.addSession(id: sessionID, continuation: incomingBiStreamsContinuation)
-
             let (incomingDatagrams, incomingDatagramsContinuation) = AsyncStream<ByteBuffer>.makeStream()
-            self.incomingDatagrams.addSession(id: sessionID, continuation: incomingDatagramsContinuation)
+            self.incomingStreamsAndDatagrams.addSession(
+                id: sessionID,
+                unidirectionalStreamsContinuation: incomingUniStreamsContinuation,
+                bidirectionalStreamsContinuation: incomingBiStreamsContinuation,
+                datagramsContinuation: incomingDatagramsContinuation
+            )
 
             return try await operation(
                 WebTransportSession(

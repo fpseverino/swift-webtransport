@@ -31,9 +31,7 @@ func withH3Connection<Value>(
     // this is a no-op when it has already been completed.
     defer { serverSettingsPromise.fail(ChannelError.ioOnClosedChannel) }
 
-    let incomingUnidirectionalStreams = WebTransportConnection.IncomingUnidirectionalStreams()
-    let incomingBidirectionalStreams = WebTransportConnection.IncomingBidirectionalStreams()
-    let incomingDatagrams = WebTransportConnection.IncomingDatagrams()
+    let incomingStreamsAndDatagrams = WebTransportConnection.IncomingStreamsAndDatagrams()
 
     let (quicChannel, connectionCreator) = try await DatagramBootstrap(group: eventLoopGroup)
         .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
@@ -43,9 +41,7 @@ func withH3Connection<Value>(
                     configuration: configuration,
                     logger: logger,
                     serverSettingsPromise: serverSettingsPromise,
-                    incomingUnidirectionalStreams: incomingUnidirectionalStreams,
-                    incomingBidirectionalStreams: incomingBidirectionalStreams,
-                    incomingDatagrams: incomingDatagrams
+                    incomingStreamsAndDatagrams: incomingStreamsAndDatagrams
                 )
                 return (channel, NIOLoopBound(connectionCreator, eventLoop: channel.eventLoop))
             }
@@ -76,10 +72,8 @@ func withH3Connection<Value>(
                 port: port,
                 h3Connection: h3Connection,
                 serverSettingsFuture: serverSettingsPromise.futureResult,
-                incomingUnidirectionalStreams: incomingUnidirectionalStreams,
-                incomingBidirectionalStreams: incomingBidirectionalStreams,
-                datagramChannel: connectionChannel,
-                incomingDatagrams: incomingDatagrams
+                incomingStreamsAndDatagrams: incomingStreamsAndDatagrams,
+                datagramChannel: connectionChannel
             )
         )
 
