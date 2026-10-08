@@ -49,7 +49,7 @@ public struct WebTransportConnection: Sendable {
     /// - Parameters:
     ///   - ipAddress: The IP address of the WebTransport server.
     ///   - port: The port of the WebTransport server.
-    ///   - verificationConfiguration: Information required to verify the server identity.
+    ///   - configuration: The configuration for the WebTransport connection.
     ///   - eventLoopGroup: The `EventLoopGroup` to run the connection on.
     ///   - logger: The logger to use for the connection. Defaults to the current task-local logger.
     ///   - operation: The closure where WebTransport operations using the connection are performed.
@@ -166,6 +166,42 @@ public struct WebTransportConnection: Sendable {
                     incomingDatagrams: incomingDatagrams
                 )
             )
+        }
+    }
+}
+
+extension WebTransportSession {
+    /// Connect to the WebTransport server,
+    /// create a single WebTransport session and run operations using it,
+    /// then automatically terminate the session and close the connection.
+    ///
+    /// - Parameters:
+    ///   - ipAddress: The IP address of the WebTransport server.
+    ///   - port: The port of the WebTransport server.
+    ///   - connectionConfiguration: The configuration for the WebTransport connection.
+    ///   - sessionConfiguration: The configuration for the WebTransport session.
+    ///   - eventLoopGroup: The `EventLoopGroup` to run the connection on.
+    ///   - logger: The logger to use for the connection. Defaults to the current task-local logger.
+    ///   - operation: The closure where WebTransport operations using the session are performed.
+    ///
+    /// - Returns: The value returned by the `operation` closure.
+    public static func withSession<Value>(
+        ipAddress: String,
+        port: Int,
+        connectionConfiguration: WebTransportConnection.Configuration,
+        sessionConfiguration: WebTransportSession.Configuration,
+        eventLoopGroup: any EventLoopGroup = MultiThreadedEventLoopGroup.singleton,
+        logger: Logger = .current,
+        operation: (WebTransportSession) async throws -> Value
+    ) async throws -> Value {
+        try await WebTransportConnection.withConnection(
+            ipAddress: ipAddress,
+            port: port,
+            configuration: connectionConfiguration,
+            eventLoopGroup: eventLoopGroup,
+            logger: logger
+        ) { connection in
+            try await connection.withSession(configuration: sessionConfiguration, operation: operation)
         }
     }
 }

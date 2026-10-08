@@ -86,19 +86,14 @@ func withH3Connection<Value>(
         do {
             try await quicChannel.close()
             try await connectionChannel.close()
-        } catch ChannelError.alreadyClosed {
-            ()
-        }
+        } catch ChannelError.alreadyClosed {}
 
         return value
     } catch {
         do {
             try await quicChannel.close()
             try await connectionChannel.close()
-        } catch ChannelError.alreadyClosed {
-            ()
-        }
-
+        } catch ChannelError.alreadyClosed {}
         throw error
     }
 }
