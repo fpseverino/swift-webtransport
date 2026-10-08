@@ -13,7 +13,7 @@ struct WebTransportSessionTests {
         try await WebTransportConnection.withConnection(
             ipAddress: "127.0.0.1",
             port: server.port,
-            verificationConfiguration: .x509Certificates(trustRootsFilePath: server.trustRootsFilePath)
+            configuration: .init(verificationConfiguration: .x509Certificates(trustRootsFilePath: server.trustRootsFilePath))
         ) { connection in
             try await connection.withSession(
                 configuration: .init(applicationProtocols: ["webtransport-test", "webtransport-test-2"], urlPath: "/webtransport")
@@ -32,7 +32,7 @@ struct WebTransportSessionTests {
         try await WebTransportConnection.withConnection(
             ipAddress: "127.0.0.1",
             port: server.port,
-            verificationConfiguration: .x509Certificates(trustRootsFilePath: server.trustRootsFilePath)
+            configuration: .init(verificationConfiguration: .x509Certificates(trustRootsFilePath: server.trustRootsFilePath))
         ) { connection in
             try await connection.withSession(configuration: .init(urlPath: "/webtransport")) { session in
                 #expect(session.applicationProtocol == nil)
@@ -42,7 +42,7 @@ struct WebTransportSessionTests {
         try await WebTransportConnection.withConnection(
             ipAddress: "127.0.0.1",
             port: server.port,
-            verificationConfiguration: .x509Certificates(trustRootsFilePath: server.trustRootsFilePath)
+            configuration: .init(verificationConfiguration: .x509Certificates(trustRootsFilePath: server.trustRootsFilePath))
         ) { connection in
             try await connection.withSession(configuration: .init(applicationProtocols: ["unknown"], urlPath: "/webtransport")) { session in
                 #expect(session.applicationProtocol == nil)
@@ -55,7 +55,7 @@ struct WebTransportSessionTests {
         try await WebTransportConnection.withConnection(
             ipAddress: "127.0.0.1",
             port: server.port,
-            verificationConfiguration: .x509Certificates(trustRootsFilePath: server.trustRootsFilePath)
+            configuration: .init(verificationConfiguration: .x509Certificates(trustRootsFilePath: server.trustRootsFilePath))
         ) { connection in
             try await connection.withSession(
                 configuration: .init(applicationProtocols: ["webtransport-test", "webtransport-test-2"], urlPath: "/webtransport")
@@ -106,7 +106,7 @@ struct WebTransportSessionTests {
         try await WebTransportConnection.withConnection(
             ipAddress: "127.0.0.1",
             port: server.port,
-            verificationConfiguration: .x509Certificates(trustRootsFilePath: server.trustRootsFilePath)
+            configuration: .init(verificationConfiguration: .x509Certificates(trustRootsFilePath: server.trustRootsFilePath))
         ) { connection in
             try await connection.withSession(
                 configuration: .init(applicationProtocols: ["webtransport-test", "webtransport-test-2"], urlPath: "/webtransport")
@@ -158,7 +158,7 @@ struct WebTransportSessionTests {
         try await WebTransportConnection.withConnection(
             ipAddress: "127.0.0.1",
             port: server.port,
-            verificationConfiguration: .x509Certificates(trustRootsFilePath: server.trustRootsFilePath)
+            configuration: .init(verificationConfiguration: .x509Certificates(trustRootsFilePath: server.trustRootsFilePath))
         ) { connection in
             try await connection.withSession(
                 configuration: .init(applicationProtocols: ["webtransport-test", "webtransport-test-2"], urlPath: "/webtransport")
@@ -180,7 +180,14 @@ struct WebTransportSessionTests {
         try await WebTransportConnection.withConnection(
             ipAddress: "127.0.0.1",
             port: server.port,
-            verificationConfiguration: .x509Certificates(trustRootsFilePath: server.trustRootsFilePath)
+            configuration: .init(
+                flowControlSettings: .init(
+                    initialMaximumUnidirectionalStreams: 100,
+                    initialMaximumBidirectionalStreams: 100,
+                    initialMaximumData: 1 << 20
+                ),
+                verificationConfiguration: .x509Certificates(trustRootsFilePath: server.trustRootsFilePath)
+            )
         ) { connection in
             try await withThrowingTaskGroup { group in
                 group.addTask {

@@ -21,7 +21,7 @@ import NIOQUIC
 func withH3Connection<Value>(
     ipAddress: String,
     port: Int,
-    verificationConfiguration: VerificationConfiguration,
+    configuration: WebTransportConnection.Configuration,
     eventLoopGroup: any EventLoopGroup,
     logger: Logger,
     body: (WebTransportConnection) async throws -> Value
@@ -40,7 +40,7 @@ func withH3Connection<Value>(
         .bind(host: "127.0.0.1", port: 0) { channel in
             channel.eventLoop.makeCompletedFuture {
                 let connectionCreator = try channel.makeConnectionCreator(
-                    verificationConfiguration: verificationConfiguration,
+                    configuration: configuration,
                     logger: logger,
                     serverSettingsPromise: serverSettingsPromise,
                     incomingUnidirectionalStreams: incomingUnidirectionalStreams,

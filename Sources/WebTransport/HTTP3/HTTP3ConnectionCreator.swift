@@ -45,7 +45,7 @@ struct TestHTTP3SingleConnectionCreator: HTTP3ConnectionCreator {
 
 extension Channel {
     func makeConnectionCreator(
-        verificationConfiguration: VerificationConfiguration,
+        configuration: WebTransportConnection.Configuration,
         logger: Logger,
         serverSettingsPromise: EventLoopPromise<HTTP3Settings>,
         incomingUnidirectionalStreams: WebTransportConnection.IncomingUnidirectionalStreams,
@@ -55,7 +55,7 @@ extension Channel {
         let (quicHandler, _) = try QUICHandler.makeHandlerAndConnectionMultiplexer(
             channel: self,
             quicConfiguration: QUICConfiguration.client(
-                verificationConfiguration: verificationConfiguration,
+                verificationConfiguration: configuration.verificationConfiguration,
                 applicationProtocols: ["h3"]
             ),
             logger: logger,
@@ -75,10 +75,18 @@ extension Channel {
                             .init(identifier: .h3Datagram, value: 1),
                             // TODO: remove after WebTransport RFC is published
                             .init(identifier: .webTransportEnabled, value: 1),
-                            // TODO: let the user set these
-                            .init(identifier: .webTransportInitialMaximumStreamsUnidirectional, value: 100),
-                            .init(identifier: .webTransportInitialMaximumStreamsBidirectional, value: 100),
-                            .init(identifier: .webTransportInitialMaximumData, value: 1 << 20),
+                            .init(
+                                identifier: .webTransportInitialMaximumStreamsUnidirectional,
+                                value: UInt64(configuration.flowControlSettings.initialMaximumUnidirectionalStreams)
+                            ),
+                            .init(
+                                identifier: .webTransportInitialMaximumStreamsBidirectional,
+                                value: UInt64(configuration.flowControlSettings.initialMaximumBidirectionalStreams)
+                            ),
+                            .init(
+                                identifier: .webTransportInitialMaximumData,
+                                value: UInt64(configuration.flowControlSettings.initialMaximumData)
+                            ),
                         ]),
                         streamCreator: streamCreator,
                         logger: logger,

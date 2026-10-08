@@ -5,7 +5,7 @@ public import NIOCore
 @_spi(HTTP3AsyncInterface) import NIOHTTP3
 import NIOHTTPTypes
 public import NIOPosix
-public import NIOQUIC
+import NIOQUIC
 import NIOQUICHelpers
 import RawStructuredFieldValues
 
@@ -58,7 +58,7 @@ public struct WebTransportConnection: Sendable {
     public static func withConnection<Value>(
         ipAddress: String,
         port: Int,
-        verificationConfiguration: VerificationConfiguration,
+        configuration: Configuration,
         eventLoopGroup: any EventLoopGroup = MultiThreadedEventLoopGroup.singleton,
         logger: Logger = .current,
         operation: (WebTransportConnection) async throws -> Value
@@ -66,7 +66,7 @@ public struct WebTransportConnection: Sendable {
         try await withH3Connection(
             ipAddress: ipAddress,
             port: port,
-            verificationConfiguration: verificationConfiguration,
+            configuration: configuration,
             eventLoopGroup: eventLoopGroup,
             logger: logger,
             body: operation

@@ -19,7 +19,7 @@ struct Example {
         try await WebTransportConnection.withConnection(
             ipAddress: "127.0.0.1",
             port: 6121,
-            verificationConfiguration: .x509Certificates(trustRootsFilePath: trustRootsFilePath)
+            configuration: .init(verificationConfiguration: .x509Certificates(trustRootsFilePath: trustRootsFilePath))
         ) { connection in
             Logger.current.info("Established WebTransport connection to the server")
 
