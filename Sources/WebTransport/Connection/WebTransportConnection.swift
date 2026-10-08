@@ -159,6 +159,7 @@ public struct WebTransportConnection: Sendable {
                     sessionID: sessionID,
                     applicationProtocol: applicationProtocol,
                     h3Connection: self.h3Connection,
+                    connectStreamWriter: requestWriter,
                     incomingUnidirectionalStreams: incomingUniStreams,
                     incomingBidirectionalStreams: incomingBiStreams,
                     datagramChannel: self.datagramChannel,

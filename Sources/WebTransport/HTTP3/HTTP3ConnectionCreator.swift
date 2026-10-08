@@ -88,7 +88,7 @@ extension Channel {
                                 switch streamType {
                                 case .control:
                                     try streamChannel.pipeline.syncOperations.addHandler(
-                                        ServerHTTP3SettingsChannelHandler(serverSettingsPromise: serverSettingsPromise)
+                                        ServerControlStreamChannelHandler(serverSettingsPromise: serverSettingsPromise)
                                     )
                                 case .unknown(let raw) where raw == 0x54:
                                     try streamChannel.pipeline.syncOperations.addHandler(

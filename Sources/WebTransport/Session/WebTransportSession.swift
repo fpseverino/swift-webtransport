@@ -18,6 +18,8 @@ public struct WebTransportSession: Sendable {
     public let applicationProtocol: String?
     /// Used to open QUIC unidirectional and bidirectional streams
     private let h3Connection: HTTP3ClientConnection<Never, NIOQUIC.QUICStreamCreator>
+    /// Used to write capsules to the CONNECT stream that established the WebTransport session.
+    private let connectStreamWriter: NIOAsyncChannelOutboundWriter<HTTPRequestPart>
 
     /// An asynchronous sequence of unidirectional streams opened by the server.
     /// Each one can be used to read data from the server.
@@ -34,6 +36,7 @@ public struct WebTransportSession: Sendable {
         sessionID: QUICStreamID,
         applicationProtocol: String?,
         h3Connection: HTTP3ClientConnection<Never, NIOQUIC.QUICStreamCreator>,
+        connectStreamWriter: NIOAsyncChannelOutboundWriter<HTTPRequestPart>,
         incomingUnidirectionalStreams: IncomingUnidirectionalStreams,
         incomingBidirectionalStreams: IncomingBidirectionalStreams,
         datagramChannel: any Channel,
@@ -44,6 +47,7 @@ public struct WebTransportSession: Sendable {
         self.h3Connection = h3Connection
         self.incomingUnidirectionalStreams = incomingUnidirectionalStreams
         self.incomingBidirectionalStreams = incomingBidirectionalStreams
+        self.connectStreamWriter = connectStreamWriter
         self.datagramChannel = datagramChannel
         self.incomingDatagrams = incomingDatagrams
     }
@@ -88,4 +92,19 @@ public struct WebTransportSession: Sendable {
     public func sendDatagram(_ payload: ByteBuffer) async throws {
         try await self.datagramChannel.writeAndFlush(HTTP3Datagram(streamID: self.sessionID, payload: payload))
     }
+
+    /// Indicate to the server that the client would like the transport session to start draining, prior to closing it.
+    public func drain() async throws {
+        try await self.connectStreamWriter.write(.body(.wtDrainSessionCapsule))
+    }
+}
+
+extension ByteBuffer {
+    /// The WT_DRAIN_SESSION capsule.
+    static let wtDrainSessionCapsule: ByteBuffer = {
+        var buffer = ByteBuffer()
+        buffer.writeEncodedInteger(0x78ae, strategy: .quic)
+        buffer.writeEncodedInteger(0, strategy: .quic)
+        return buffer
+    }()
 }
