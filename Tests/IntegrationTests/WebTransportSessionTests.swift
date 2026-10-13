@@ -57,6 +57,7 @@ struct WebTransportSessionTests {
                 group.addTask {
                     try await session.withUnidirectionalStream { outbound in
                         try await outbound.write(ByteBuffer(string: "Hello, WebTransport!"))
+                        outbound.finish()
                     }
                 }
 
@@ -187,6 +188,12 @@ struct WebTransportSessionTests {
             sessionConfiguration: .init(applicationProtocols: ["webtransport-test", "webtransport-test-2"], urlPath: "/webtransport")
         ) { session in
             try await session.drain()
+            try await withThrowingTaskGroup { group in
+                group.addTask { try await session.draining }
+                // No supported test server supports session draining
+                try await Task.sleep(for: .seconds(1))
+                group.cancelAll()
+            }
         }
     }
 

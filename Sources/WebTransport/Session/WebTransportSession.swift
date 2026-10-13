@@ -21,6 +21,9 @@ public struct WebTransportSession: Sendable, ~Copyable {
     /// Used to write capsules to the CONNECT stream that established the WebTransport session.
     private let connectStreamWriter: NIOAsyncChannelOutboundWriter<HTTPRequestPart>
 
+    /// The future that will be notified when a `WT_DRAIN_SESSION` capsule is received from the server.
+    private let drainingSessionFuture: EventLoopFuture<Void>
+
     private let flowControlHandler: FlowControlHandler
     /// An asynchronous sequence of `WT_STREAMS_BLOCKED` capsules for unidirectional streams sent by the server.
     ///
@@ -63,6 +66,7 @@ public struct WebTransportSession: Sendable, ~Copyable {
         applicationProtocol: String?,
         h3Connection: HTTP3ClientConnection<Never, NIOQUIC.QUICStreamCreator>,
         connectStreamWriter: NIOAsyncChannelOutboundWriter<HTTPRequestPart>,
+        drainingSessionFuture: EventLoopFuture<Void>,
         flowControlHandler: FlowControlHandler,
         incomingUnidirectionalStreamsBlocked: AsyncStream<UInt64>,
         incomingBidirectionalStreamsBlocked: AsyncStream<UInt64>,
@@ -76,6 +80,7 @@ public struct WebTransportSession: Sendable, ~Copyable {
         self.applicationProtocol = applicationProtocol
         self.h3Connection = h3Connection
         self.connectStreamWriter = connectStreamWriter
+        self.drainingSessionFuture = drainingSessionFuture
         self.flowControlHandler = flowControlHandler
         self.incomingUnidirectionalStreamsBlocked = incomingUnidirectionalStreamsBlocked
         self.incomingBidirectionalStreamsBlocked = incomingBidirectionalStreamsBlocked
@@ -144,6 +149,13 @@ public struct WebTransportSession: Sendable, ~Copyable {
     /// Indicate to the server that the client would like the transport session to start draining, prior to closing it.
     public func drain() async throws {
         try await self.connectStreamWriter.write(.body(.wtDrainSessionCapsule))
+    }
+
+    /// Returns when the server indicates that it would like the transport session to start draining, prior to closing it.
+    public var draining: Void {
+        get async throws {
+            try await self.drainingSessionFuture.getAbandoningOnCancel()
+        }
     }
 
     /// Increase the number of unidirectional streams the server is allowed to open, sending a `WT_MAX_STREAMS` capsule.

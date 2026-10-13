@@ -117,7 +117,11 @@ public struct WebTransportConnection: Sendable, ~Copyable {
         )
         defer { serverBlockedCapsules.finish() }
 
+        let drainingSessionPromise = self.datagramChannel.eventLoop.makePromise(of: Void.self)
+        defer { drainingSessionPromise.succeed() }
+
         let asyncChannel = try await self.h3Connection.makeRequestStream(
+            drainingSessionPromise: drainingSessionPromise,
             flowControlHandler: flowControlHandler,
             serverBlockedCapsules: serverBlockedCapsules
         )
@@ -199,6 +203,7 @@ public struct WebTransportConnection: Sendable, ~Copyable {
                     applicationProtocol: applicationProtocol,
                     h3Connection: self.h3Connection,
                     connectStreamWriter: requestWriter,
+                    drainingSessionFuture: drainingSessionPromise.futureResult,
                     flowControlHandler: flowControlHandler,
                     incomingUnidirectionalStreamsBlocked: incomingUniStreamsBlocked,
                     incomingBidirectionalStreamsBlocked: incomingBiStreamsBlocked,

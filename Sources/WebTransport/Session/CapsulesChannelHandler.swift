@@ -6,10 +6,19 @@ final class CapsulesChannelHandler: ChannelInboundHandler {
     typealias InboundIn = HTTPResponsePart
     typealias InboundOut = HTTPResponsePart
 
+    /// The promise that will be fulfilled when a `WT_DRAIN_SESSION` capsule is received from the server.
+    private let drainingSessionPromise: EventLoopPromise<Void>
+    /// The Flow Control handler managing stream and data limits set by the client and the server.
     private let flowControlHandler: FlowControlHandler
+    /// The continuations that are used to forward `WT_*_BLOCKED` capsules to the ``WebTransportSession``.
     private let serverBlockedCapsules: ServerBlockedCapsules
 
-    init(flowControlHandler: FlowControlHandler, serverBlockedCapsules: ServerBlockedCapsules) {
+    init(
+        drainingSessionPromise: EventLoopPromise<Void>,
+        flowControlHandler: FlowControlHandler,
+        serverBlockedCapsules: ServerBlockedCapsules
+    ) {
+        self.drainingSessionPromise = drainingSessionPromise
         self.flowControlHandler = flowControlHandler
         self.serverBlockedCapsules = serverBlockedCapsules
     }
@@ -24,6 +33,9 @@ final class CapsulesChannelHandler: ChannelInboundHandler {
         let capsuleType = buffer.readEncodedInteger(as: UInt64.self, strategy: .quic)
         _ = buffer.readEncodedInteger(as: UInt64.self, strategy: .quic)  // Capsule Length
         switch capsuleType {
+        case 0x78ae:
+            // `WT_DRAIN_SESSION`
+            self.drainingSessionPromise.succeed()
         case 0x190B_4D40:
             // `WT_MAX_STREAMS` (unidirectional)
             guard let maxUnidirectionalStreams = buffer.readEncodedInteger(as: UInt64.self, strategy: .quic) else {

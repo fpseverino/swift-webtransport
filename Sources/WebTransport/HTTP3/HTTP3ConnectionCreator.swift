@@ -141,9 +141,11 @@ extension HTTP3ClientConnection {
     /// The stream is closed by the caller using `executeThenClose`.
     ///
     /// - Parameters:
+    ///   - drainingSessionPromise: The promise that will be fulfilled when a `WT_DRAIN_SESSION` capsule is received from the server.
     ///   - flowControlHandler: The Flow Control handler managing stream and data limits set by the client and the server.
     ///   - serverBlockedCapsules: The continuations that are used to forward `WT_*_BLOCKED` capsules to the ``WebTransportSession``.
     func makeRequestStream(
+        drainingSessionPromise: EventLoopPromise<Void>,
         flowControlHandler: FlowControlHandler,
         serverBlockedCapsules: ServerBlockedCapsules
     ) async throws -> NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart> {
@@ -151,7 +153,11 @@ extension HTTP3ClientConnection {
             let streamChannel = $0.channel
             return streamChannel.eventLoop.makeCompletedFuture {
                 try streamChannel.pipeline.syncOperations.addHandler(
-                    CapsulesChannelHandler(flowControlHandler: flowControlHandler, serverBlockedCapsules: serverBlockedCapsules)
+                    CapsulesChannelHandler(
+                        drainingSessionPromise: drainingSessionPromise,
+                        flowControlHandler: flowControlHandler,
+                        serverBlockedCapsules: serverBlockedCapsules
+                    )
                 )
                 return try NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart>(
                     wrappingChannelSynchronously: streamChannel,
