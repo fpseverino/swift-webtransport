@@ -139,11 +139,21 @@ extension Channel {
 extension HTTP3ClientConnection {
     /// Opens a single request stream on this connection wrapped in a `NIOAsyncChannel`.
     /// The stream is closed by the caller using `executeThenClose`.
-    func makeRequestStream() async throws -> NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart> {
+    ///
+    /// - Parameters:
+    ///   - flowControlHandler: The Flow Control handler managing stream and data limits set by the client and the server.
+    ///   - serverBlockedCapsules: The continuations that are used to forward `WT_*_BLOCKED` capsules to the ``WebTransportSession``.
+    func makeRequestStream(
+        flowControlHandler: FlowControlHandler,
+        serverBlockedCapsules: ServerBlockedCapsules
+    ) async throws -> NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart> {
         try await self.concurrencyView.createRequestStream {
             let streamChannel = $0.channel
             return streamChannel.eventLoop.makeCompletedFuture {
-                try NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart>(
+                try streamChannel.pipeline.syncOperations.addHandler(
+                    CapsulesChannelHandler(flowControlHandler: flowControlHandler, serverBlockedCapsules: serverBlockedCapsules)
+                )
+                return try NIOAsyncChannel<HTTPResponsePart, HTTPRequestPart>(
                     wrappingChannelSynchronously: streamChannel,
                     configuration: .init(isOutboundHalfClosureEnabled: true)
                 )

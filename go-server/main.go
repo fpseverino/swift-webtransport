@@ -153,9 +153,9 @@ func runServer(tlsConf *tls.Config, certHash, addr, browserAddr string, protocol
 		// HTTP/3 connection; without it, the server rejects any session beyond the first with
 		// "multiple sessions require flow control".
 		Config: &webtransport.Config{
-			MaxIncomingStreams:    100,
-			MaxIncomingUniStreams: 100,
-			MaxIncomingData:       1 << 20,
+			MaxIncomingStreams:    10,
+			MaxIncomingUniStreams: 10,
+			MaxIncomingData:       1 << 10,
 		},
 	}
 
@@ -203,7 +203,7 @@ func echoSession(sess *webtransport.Session) {
 				for {
 					n, readErr := stream.Read(buffer)
 					if n > 0 {
-						log.Printf("received unidirectional stream data: %q", buffer[:n])
+						log.Printf("received unidirectional stream data: %s", describeData(buffer[:n]))
 						if string(buffer[:n]) == "open" {
 							openServerUniStream(ctx, sess)
 						}
@@ -227,6 +227,15 @@ func echoSession(sess *webtransport.Session) {
 			return
 		}
 	}
+}
+
+// describeData returns a log-friendly representation of data, truncating large payloads.
+func describeData(data []byte) string {
+	const maxPreview = 64
+	if len(data) <= maxPreview {
+		return fmt.Sprintf("%q", data)
+	}
+	return fmt.Sprintf("%q... (%d bytes)", data[:maxPreview], len(data))
 }
 
 // logAcceptError logs a stream accept failure, unless it is merely the result of the
@@ -255,7 +264,7 @@ func echoStream(ctx context.Context, sess *webtransport.Session, stream *webtran
 	for {
 		n, readErr := stream.Read(buffer)
 		if n > 0 {
-			log.Printf("received stream data: %q", buffer[:n])
+			log.Printf("received stream data: %s", describeData(buffer[:n]))
 			if string(buffer[:n]) == "open" {
 				openServerStream(ctx, sess)
 			} else if _, writeErr := stream.Write(buffer[:n]); writeErr != nil {

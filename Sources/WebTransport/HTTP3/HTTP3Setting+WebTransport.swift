@@ -36,6 +36,12 @@ extension HTTP3Setting.Identifier {
     static var webTransportInitialMaximumData: HTTP3Setting.Identifier {
         HTTP3Setting.Identifier(extensionSetting: 0x2b61)!
     }
+
+    static let flowControlHTTP3Settings: [HTTP3Setting.Identifier] = [
+        .webTransportInitialMaximumStreamsUnidirectional,
+        .webTransportInitialMaximumStreamsBidirectional,
+        .webTransportInitialMaximumData,
+    ]
 }
 
 extension HTTP3Settings {
@@ -52,5 +58,11 @@ extension HTTP3Settings {
         //     $0.identifier == .webTransportEnabled && $0.value == 1
         // }
         return true
+    }
+
+    /// Whether the peer declared its intent to use WebTransport Flow Control,
+    /// by sending any of the `SETTINGS_WT_INITIAL_MAX_*` settings with a value other than zero.
+    var enablesWebTransportFlowControl: Bool {
+        self.other.contains { HTTP3Setting.Identifier.flowControlHTTP3Settings.contains($0.identifier) && $0.value != 0 }
     }
 }

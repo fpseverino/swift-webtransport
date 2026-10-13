@@ -10,13 +10,14 @@ import NIOQUICHelpers
 import RawStructuredFieldValues
 
 /// A single connection to a WebTransport server.
-public struct WebTransportConnection: Sendable {
+public struct WebTransportConnection: Sendable, ~Copyable {
     private let ipAddress: String
     private let port: Int
 
     /// Used to open QUIC unidirectional and bidirectional streams
     private let h3Connection: HTTP3ClientConnection<Never, NIOQUIC.QUICStreamCreator>
     private let serverSettingsFuture: EventLoopFuture<HTTP3Settings>
+    private let flowControlSettings: Configuration.FlowControlSettings
 
     private let incomingStreamsAndDatagrams: IncomingStreamsAndDatagrams
     /// The channel used for sending HTTP Datagrams
@@ -27,6 +28,7 @@ public struct WebTransportConnection: Sendable {
         port: Int,
         h3Connection: HTTP3ClientConnection<Never, NIOQUIC.QUICStreamCreator>,
         serverSettingsFuture: EventLoopFuture<HTTP3Settings>,
+        flowControlSettings: Configuration.FlowControlSettings,
         incomingStreamsAndDatagrams: IncomingStreamsAndDatagrams,
         datagramChannel: any Channel
     ) {
@@ -34,6 +36,7 @@ public struct WebTransportConnection: Sendable {
         self.port = port
         self.h3Connection = h3Connection
         self.serverSettingsFuture = serverSettingsFuture
+        self.flowControlSettings = flowControlSettings
         self.incomingStreamsAndDatagrams = incomingStreamsAndDatagrams
         self.datagramChannel = datagramChannel
     }
@@ -55,7 +58,7 @@ public struct WebTransportConnection: Sendable {
         configuration: Configuration,
         eventLoopGroup: any EventLoopGroup = MultiThreadedEventLoopGroup.singleton,
         logger: Logger = .current,
-        operation: (WebTransportConnection) async throws -> Value
+        operation: (consuming WebTransportConnection) async throws -> Value
     ) async throws -> Value {
         try await withH3Connection(
             ipAddress: ipAddress,
@@ -76,13 +79,48 @@ public struct WebTransportConnection: Sendable {
     /// - Returns: The value returned by the `operation` closure.
     public func withSession<Value>(
         configuration: WebTransportSession.Configuration,
-        operation: (WebTransportSession) async throws -> Value
+        operation: (consuming WebTransportSession) async throws -> Value
     ) async throws -> Value {
-        guard try await self.serverSettingsFuture.get().serverSupportsWebTransport else {
+        let serverSettings: HTTP3Settings = try await self.serverSettingsFuture.get()
+        guard serverSettings.serverSupportsWebTransport else {
             throw WebTransportError.serverDoesNotSupportWebTransport
         }
 
-        let asyncChannel = try await self.h3Connection.makeRequestStream()
+        // Flow Control is enabled only if both endpoints declared their intent to use it.
+        let isFlowControlEnabled = self.flowControlSettings.enablesFlowControl && serverSettings.enablesWebTransportFlowControl
+
+        // Without Flow Control, a client MUST NOT establish more than one simultaneous session.
+        try self.incomingStreamsAndDatagrams.reserveSession(allowSimultaneous: isFlowControlEnabled)
+        // If the session is successfully established, this will be updated with the actual Session ID.
+        var activeSessionID: QUICStreamID?
+        defer { self.incomingStreamsAndDatagrams.removeSession(id: activeSessionID) }
+
+        let flowControlHandler = FlowControlHandler(
+            initialServerMaxUnidirectionalStreams: serverSettings.other
+                .first { $0.identifier == .webTransportInitialMaximumStreamsUnidirectional }?.value ?? 0,
+            initialServerMaxBidirectionalStreams: serverSettings.other
+                .first { $0.identifier == .webTransportInitialMaximumStreamsBidirectional }?.value ?? 0,
+            initialServerMaxData: serverSettings.other
+                .first { $0.identifier == .webTransportInitialMaximumData }?.value ?? 0,
+            initialClientMaxUnidirectionalStreams: numericCast(self.flowControlSettings.initialMaximumUnidirectionalStreams),
+            initialClientMaxBidirectionalStreams: numericCast(self.flowControlSettings.initialMaximumBidirectionalStreams),
+            initialClientMaxData: numericCast(self.flowControlSettings.initialMaximumData)
+        )
+
+        let (incomingUniStreamsBlocked, uniStreamsBlockedContinuation) = AsyncStream<UInt64>.makeStream()
+        let (incomingBiStreamsBlocked, biStreamsBlockedContinuation) = AsyncStream<UInt64>.makeStream()
+        let (incomingDataBlocked, dataBlockedContinuation) = AsyncStream<UInt64>.makeStream()
+        let serverBlockedCapsules = ServerBlockedCapsules(
+            unidirectionalStreamsContinuation: uniStreamsBlockedContinuation,
+            bidirectionalStreamsContinuation: biStreamsBlockedContinuation,
+            dataContinuation: dataBlockedContinuation
+        )
+        defer { serverBlockedCapsules.finish() }
+
+        let asyncChannel = try await self.h3Connection.makeRequestStream(
+            flowControlHandler: flowControlHandler,
+            serverBlockedCapsules: serverBlockedCapsules
+        )
         return try await asyncChannel.executeThenClose { responseReader, requestWriter in
             var headerFields: HTTPFields = [:]
             if !configuration.applicationProtocols.isEmpty {
@@ -138,10 +176,16 @@ public struct WebTransportConnection: Sendable {
             }
 
             let sessionID = QUICStreamID(rawValue: try await asyncChannel.channel.getOption(.quicStreamID).get())
+            activeSessionID = sessionID
 
             let (incomingUniStreams, incomingUniStreamsContinuation) = WebTransportSession.IncomingUnidirectionalStreams.makeStream()
             let (incomingBiStreams, incomingBiStreamsContinuation) = WebTransportSession.IncomingBidirectionalStreams.makeStream()
             let (incomingDatagrams, incomingDatagramsContinuation) = AsyncStream<ByteBuffer>.makeStream()
+            defer {
+                incomingUniStreamsContinuation.finish()
+                incomingBiStreamsContinuation.finish()
+                incomingDatagramsContinuation.finish()
+            }
             self.incomingStreamsAndDatagrams.addSession(
                 id: sessionID,
                 unidirectionalStreamsContinuation: incomingUniStreamsContinuation,
@@ -155,6 +199,10 @@ public struct WebTransportConnection: Sendable {
                     applicationProtocol: applicationProtocol,
                     h3Connection: self.h3Connection,
                     connectStreamWriter: requestWriter,
+                    flowControlHandler: flowControlHandler,
+                    incomingUnidirectionalStreamsBlocked: incomingUniStreamsBlocked,
+                    incomingBidirectionalStreamsBlocked: incomingBiStreamsBlocked,
+                    incomingDataBlocked: incomingDataBlocked,
                     incomingUnidirectionalStreams: incomingUniStreams,
                     incomingBidirectionalStreams: incomingBiStreams,
                     datagramChannel: self.datagramChannel,
@@ -187,7 +235,7 @@ extension WebTransportSession {
         sessionConfiguration: WebTransportSession.Configuration,
         eventLoopGroup: any EventLoopGroup = MultiThreadedEventLoopGroup.singleton,
         logger: Logger = .current,
-        operation: (WebTransportSession) async throws -> Value
+        operation: (consuming WebTransportSession) async throws -> Value
     ) async throws -> Value {
         try await WebTransportConnection.withConnection(
             ipAddress: ipAddress,

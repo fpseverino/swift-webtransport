@@ -3,10 +3,10 @@ public import NIOQUIC
 extension WebTransportConnection {
     /// A configuration object that defines how to create a WebTransport connection.
     public struct Configuration: Sendable {
-        /// Initial flow control limits.
+        /// Initial Flow Control limits.
         ///
         /// To establish more than one simultaneous WebTransport session,
-        /// at least one of these limits must be set with any value other than "0".
+        /// at least one of these Flow Control limits must be set with any value other than "0".
         public struct FlowControlSettings: Sendable {
             /// The initial value for the unidirectional max stream limit.
             public var initialMaximumUnidirectionalStreams: Int
@@ -32,9 +32,17 @@ extension WebTransportConnection {
                 self.initialMaximumBidirectionalStreams = initialMaximumBidirectionalStreams
                 self.initialMaximumData = initialMaximumData
             }
+
+            /// Whether any of the limits is set with a value other than "0",
+            /// which declares the intent to use Flow Control.
+            var enablesFlowControl: Bool {
+                self.initialMaximumUnidirectionalStreams != 0
+                    || self.initialMaximumBidirectionalStreams != 0
+                    || self.initialMaximumData != 0
+            }
         }
 
-        /// Initial flow control limits.
+        /// Initial Flow Control limits.
         public var flowControlSettings: FlowControlSettings
 
         /// Information required to verify the server identity.
@@ -43,7 +51,7 @@ extension WebTransportConnection {
         /// Creates a new WebTransport connection configuration.
         ///
         /// - Parameters:
-        ///   - flowControlSettings: The initial flow control limits.
+        ///   - flowControlSettings: The initial Flow Control limits.
         ///   - verificationConfiguration: Information required to verify the server identity.
         public init(
             flowControlSettings: FlowControlSettings = .init(),

@@ -53,37 +53,55 @@ struct WebTransportSessionTests {
             sessionConfiguration: .init(applicationProtocols: ["webtransport-test", "webtransport-test-2"], urlPath: "/webtransport")
         ) { session in
             try await withThrowingTaskGroup { group in
+                // Write on a unidirectional stream
                 group.addTask {
                     try await session.withUnidirectionalStream { outbound in
                         try await outbound.write(ByteBuffer(string: "Hello, WebTransport!"))
                     }
                 }
 
+                // Write and read on an "echo" bidirectional stream
                 group.addTask {
                     try await session.withBidirectionalStream { inbound, outbound in
-                        let payload = ByteBuffer(string: "Hello from client!")
+                        let payload = ByteBuffer(string: "Hello, World!")
                         try await outbound.write(payload)
                         var inboundStreamIterator = inbound.makeAsyncIterator()
                         #expect(try await inboundStreamIterator.next() == payload)
                     }
                 }
 
+                // Write an `AsyncSequence` of messages on a bidirectional stream
                 group.addTask {
                     try await session.withBidirectionalStream { inbound, outbound in
-                        let firstPayload = ByteBuffer(string: "Hello, World!")
-                        try await outbound.write(firstPayload)
-                        var inboundStreamIterator = inbound.makeAsyncIterator()
-                        #expect(try await inboundStreamIterator.next() == firstPayload)
+                        let (messagesStream, messageStreamContinuation) = AsyncStream.makeStream(of: ByteBuffer.self)
+                        try await withThrowingTaskGroup { streamGroup in
+                            streamGroup.addTask {
+                                for try await message in inbound {
+                                    guard message.readableBytes < 16 else { break }
+                                    messageStreamContinuation.yield(ByteBuffer(bytes: message.readableBytesView + message.readableBytesView))
+                                }
+                                messageStreamContinuation.finish()
+                            }
 
-                        let secondPayload = ByteBuffer(string: "Hello, Swift!")
-                        try await outbound.write(secondPayload)
-                        #expect(try await inboundStreamIterator.next() == secondPayload)
+                            streamGroup.addTask {
+                                try await outbound.write(ByteBuffer(string: "a"))
+                                try await outbound.write(contentsOf: messagesStream)
+                            }
+
+                            try await streamGroup.waitForAll()
+                        }
                     }
                 }
 
+                // Write a `Sequence` of messages on a unidirectional stream
                 group.addTask {
                     try await session.withUnidirectionalStream { outbound in
-                        try await outbound.write(ByteBuffer(string: "Hello from unidirectional stream!"))
+                        let messages: [ByteBuffer] = [
+                            .init(string: "Hello"),
+                            .init(string: "Ciao"),
+                            .init(string: "Hola"),
+                        ]
+                        try await outbound.write(contentsOf: messages)
                     }
                 }
 
@@ -160,6 +178,18 @@ struct WebTransportSessionTests {
         }
     }
 
+    @Test("Draining", arguments: TestWTServer.allCases)
+    func draining(server: TestWTServer) async throws {
+        try await WebTransportSession.withSession(
+            ipAddress: "127.0.0.1",
+            port: server.port,
+            connectionConfiguration: .init(verificationConfiguration: .x509Certificates(trustRootsFilePath: server.trustRootsFilePath)),
+            sessionConfiguration: .init(applicationProtocols: ["webtransport-test", "webtransport-test-2"], urlPath: "/webtransport")
+        ) { session in
+            try await session.drain()
+        }
+    }
+
     @Test("Multiple Sessions", arguments: TestWTServer.allServersSupportingFlowControl)
     func multipleSessions(server: TestWTServer) async throws {
         try await WebTransportConnection.withConnection(
@@ -204,15 +234,267 @@ struct WebTransportSessionTests {
         }
     }
 
-    @Test("Drain", arguments: TestWTServer.allCases)
-    func drain(server: TestWTServer) async throws {
+    @Test("Maximum Streams", arguments: TestWTServer.allServersSupportingFlowControl)
+    func maximumStreams(server: TestWTServer) async throws {
         try await WebTransportSession.withSession(
             ipAddress: "127.0.0.1",
             port: server.port,
-            connectionConfiguration: .init(verificationConfiguration: .x509Certificates(trustRootsFilePath: server.trustRootsFilePath)),
-            sessionConfiguration: .init(applicationProtocols: ["webtransport-test", "webtransport-test-2"], urlPath: "/webtransport")
+            // Servers only enable session Flow Control (and send `WT_MAX_*` capsules) if clients advertise non-zero limits too.
+            connectionConfiguration: .init(
+                flowControlSettings: .init(
+                    initialMaximumUnidirectionalStreams: 100,
+                    initialMaximumBidirectionalStreams: 100,
+                    initialMaximumData: 1 << 20
+                ),
+                verificationConfiguration: .x509Certificates(trustRootsFilePath: server.trustRootsFilePath)
+            ),
+            sessionConfiguration: .init(applicationProtocols: ["webtransport-test"], urlPath: "/webtransport")
         ) { session in
-            try await session.drain()
+            let (openedBiStreams, openedBiStreamsContinuation) = AsyncStream.makeStream(of: Int.self)
+            let (openedUniStreams, openedUniStreamsContinuation) = AsyncStream.makeStream(of: Int.self)
+
+            try await withThrowingTaskGroup { group in
+                // Supported test servers are configured to allow a maximum of 10 bidirectional and 10 unidirectional streams per session.
+                for count in 1...10 {
+                    group.addTask {
+                        try await session.withBidirectionalStream { _, _ in
+                            openedBiStreamsContinuation.yield(count)
+                            try await Task.sleep(for: .seconds(10))
+                        }
+                    }
+
+                    group.addTask {
+                        try await session.withUnidirectionalStream { _ in
+                            openedUniStreamsContinuation.yield(count)
+                            try await Task.sleep(for: .seconds(10))
+                        }
+                    }
+                }
+
+                for await count in openedBiStreams { if count >= 10 { break } }
+
+                await #expect(throws: WebTransportError.streamLimitReached(maxStreams: 10)) {
+                    try await session.withBidirectionalStream { _, _ in }
+                }
+
+                for await count in openedUniStreams { if count >= 10 { break } }
+
+                await #expect(throws: WebTransportError.streamLimitReached(maxStreams: 10)) {
+                    try await session.withUnidirectionalStream { _ in }
+                }
+
+                // Closing the streams makes the server release credit and send `WT_MAX_STREAMS` capsules,
+                // which raise the limits so that new streams can be opened again.
+                group.cancelAll()
+                // Give the server some time to process the stream closures and send `WT_MAX_STREAMS` capsules.
+                try await Task.sleep(for: .seconds(1))
+
+                await #expect(throws: Never.self) { try await session.withBidirectionalStream { _, _ in } }
+                await #expect(throws: Never.self) { try await session.withUnidirectionalStream { _ in } }
+            }
+        }
+    }
+
+    @Test("Maximum Data", arguments: TestWTServer.allServersSupportingFlowControl)
+    func maximumData(server: TestWTServer) async throws {
+        try await WebTransportConnection.withConnection(
+            ipAddress: "127.0.0.1",
+            port: server.port,
+            // Servers only enable session Flow Control (and send `WT_MAX_*` capsules) if clients advertise non-zero limits too.
+            configuration: .init(
+                flowControlSettings: .init(
+                    initialMaximumUnidirectionalStreams: 100,
+                    initialMaximumBidirectionalStreams: 100,
+                    initialMaximumData: 1 << 20
+                ),
+                verificationConfiguration: .x509Certificates(trustRootsFilePath: server.trustRootsFilePath)
+            )
+        ) { connection in
+            // Supported test servers are configured to allow a maximum of 1 KiB of stream data per session.
+            let maxData = 1 << 10
+            let chunk = ByteBuffer(repeating: UInt8(ascii: "a"), count: 128)
+
+            try await withThrowingTaskGroup { group in
+                group.addTask {
+                    try await connection.withSession(configuration: .init(urlPath: "/webtransport")) { session in
+                        try await session.withUnidirectionalStream { outbound in
+                            // Nothing has been consumed by the server yet, so it cannot have raised the limit.
+                            await #expect(throws: WebTransportError.dataLimitReached(maxData: maxData)) {
+                                try await outbound.write(ByteBuffer(repeating: UInt8(ascii: "a"), count: maxData + 1))
+                            }
+
+                            for _ in 0..<(maxData / chunk.readableBytes) {
+                                try await outbound.write(chunk)
+                            }
+
+                            // The whole limit is now consumed
+                            await #expect(throws: WebTransportError.dataLimitReached(maxData: maxData)) {
+                                try await outbound.write(chunk)
+                            }
+
+                            // Give the server some time to read the data and raise the limit with a `WT_MAX_DATA` capsule.
+                            try await Task.sleep(for: .seconds(1))
+
+                            await #expect(throws: Never.self) {
+                                try await outbound.write(chunk)
+                            }
+                        }
+                    }
+                }
+
+                group.addTask {
+                    try await connection.withSession(configuration: .init(urlPath: "/webtransport")) { session in
+                        try await session.withBidirectionalStream { _, outbound in
+                            // Nothing has been consumed by the server yet, so it cannot have raised the limit.
+                            await #expect(throws: WebTransportError.dataLimitReached(maxData: maxData)) {
+                                try await outbound.write(ByteBuffer(repeating: UInt8(ascii: "a"), count: maxData + 1))
+                            }
+
+                            for _ in 0..<(maxData / chunk.readableBytes) {
+                                try await outbound.write(chunk)
+                            }
+
+                            // The whole limit is now consumed
+                            await #expect(throws: WebTransportError.dataLimitReached(maxData: maxData)) {
+                                try await outbound.write(chunk)
+                            }
+
+                            // Give the server some time to read the data and raise the limit with a `WT_MAX_DATA` capsule.
+                            try await Task.sleep(for: .seconds(1))
+
+                            await #expect(throws: Never.self) {
+                                try await outbound.write(chunk)
+                            }
+                        }
+                    }
+                }
+
+                try await group.waitForAll()
+            }
+        }
+    }
+
+    @Test("Multiple Sessions require Flow Control", arguments: TestWTServer.allServersSupportingFlowControl)
+    func multipleSessionsRequireFlowControl(server: TestWTServer) async throws {
+        try await WebTransportConnection.withConnection(
+            ipAddress: "127.0.0.1",
+            port: server.port,
+            // The client does not enable Flow Control, so only one simultaneous session is allowed.
+            configuration: .init(verificationConfiguration: .x509Certificates(trustRootsFilePath: server.trustRootsFilePath))
+        ) { connection in
+            let configuration = WebTransportSession.Configuration(applicationProtocols: ["webtransport-test"], urlPath: "/webtransport")
+
+            try await connection.withSession(configuration: configuration) { _ in
+                _ = await #expect(throws: WebTransportError.simultaneousSessionsNotAllowed) {
+                    try await connection.withSession(configuration: configuration) { _ in }
+                }
+            }
+
+            // Once the first session is over, a new one can be established.
+            await #expect(throws: Never.self) {
+                try await connection.withSession(configuration: configuration) { _ in }
+            }
+        }
+    }
+
+    @Test("No Limits without Flow Control", arguments: TestWTServer.allServersSupportingFlowControl)
+    func noLimitsWithoutFlowControl(server: TestWTServer) async throws {
+        try await WebTransportSession.withSession(
+            ipAddress: "127.0.0.1",
+            port: server.port,
+            // The client does not enable Flow Control, so the limits advertised by the server don't apply.
+            connectionConfiguration: .init(verificationConfiguration: .x509Certificates(trustRootsFilePath: server.trustRootsFilePath)),
+            sessionConfiguration: .init(applicationProtocols: ["webtransport-test"], urlPath: "/webtransport")
+        ) { session in
+            // The supported test servers allow 10 streams of each type and 1 KiB of data per session when Flow Control is enabled.
+            for _ in 1...11 {
+                try await session.withBidirectionalStream { _, _ in }
+                try await session.withUnidirectionalStream { _ in }
+            }
+
+            try await session.withUnidirectionalStream { outbound in
+                try await outbound.write(ByteBuffer(repeating: UInt8(ascii: "a"), count: 2 << 10))
+            }
+
+            try await session.withBidirectionalStream { _, outbound in
+                try await outbound.write(ByteBuffer(repeating: UInt8(ascii: "a"), count: 2 << 10))
+            }
+        }
+    }
+
+    @Test("Update Max Data", arguments: TestWTServer.allServersSupportingFlowControl)
+    func updateMaxData(server: TestWTServer) async throws {
+        try await WebTransportSession.withSession(
+            ipAddress: "127.0.0.1",
+            port: server.port,
+            connectionConfiguration: .init(
+                flowControlSettings: .init(
+                    initialMaximumUnidirectionalStreams: 10,
+                    initialMaximumBidirectionalStreams: 10,
+                    initialMaximumData: 16
+                ),
+                verificationConfiguration: .x509Certificates(trustRootsFilePath: server.trustRootsFilePath)
+            ),
+            sessionConfiguration: .init(applicationProtocols: ["webtransport-test"], urlPath: "/webtransport")
+        ) { session in
+            await #expect(throws: WebTransportError.flowControlLimitExceeded) { try await session.increaseMaxData(by: .max) }
+
+            let payload = ByteBuffer(repeating: UInt8(ascii: "a"), count: 32)
+            try await session.withBidirectionalStream { inbound, outbound in
+                // The echo is larger than the 16 bytes the server is allowed to send, so it blocks.
+                try await outbound.write(payload)
+
+                var blockedIterator = session.incomingDataBlocked.makeAsyncIterator()
+                #expect(await blockedIterator.next() == 16)
+
+                try await session.increaseMaxData(by: 1 << 10)
+
+                var received = 0
+                for try await message in inbound {
+                    received += message.readableBytes
+                    if received == payload.readableBytes { break }
+                }
+            }
+        }
+    }
+
+    @Test("Update Max Streams", arguments: TestWTServer.allServersSupportingFlowControl)
+    func updateMaxStreams(server: TestWTServer) async throws {
+        try await WebTransportSession.withSession(
+            ipAddress: "127.0.0.1",
+            port: server.port,
+            connectionConfiguration: .init(
+                flowControlSettings: .init(
+                    initialMaximumUnidirectionalStreams: 0,
+                    initialMaximumBidirectionalStreams: 0,
+                    initialMaximumData: 1 << 20
+                ),
+                verificationConfiguration: .x509Certificates(trustRootsFilePath: server.trustRootsFilePath)
+            ),
+            sessionConfiguration: .init(applicationProtocols: ["webtransport-test"], urlPath: "/webtransport")
+        ) { session in
+            await #expect(throws: WebTransportError.flowControlLimitExceeded) { try await session.increaseMaxBidirectionalStreams(by: .max) }
+
+            // Ask the server to open two streams of each type. Only the first of each can be opened until the limits are raised.
+            for _ in 1...2 {
+                try await session.withUnidirectionalStream { try await $0.write(ByteBuffer(string: "open")) }
+                try await session.withBidirectionalStream { _, outbound in try await outbound.write(ByteBuffer(string: "open")) }
+            }
+
+            var uniStreams = session.incomingUnidirectionalStreams.makeAsyncIterator()
+            var biStreams = session.incomingBidirectionalStreams.makeAsyncIterator()
+
+            try await session.increaseMaxUnidirectionalStreams(by: 1)
+            try await session.increaseMaxBidirectionalStreams(by: 1)
+
+            #expect(await uniStreams.next() != nil)
+            #expect(await biStreams.next() != nil)
+
+            try await session.increaseMaxUnidirectionalStreams(by: 1)
+            try await session.increaseMaxBidirectionalStreams(by: 1)
+
+            #expect(await uniStreams.next() != nil)
+            #expect(await biStreams.next() != nil)
         }
     }
 }

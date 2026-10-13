@@ -24,7 +24,7 @@ func withH3Connection<Value>(
     configuration: WebTransportConnection.Configuration,
     eventLoopGroup: any EventLoopGroup,
     logger: Logger,
-    body: (WebTransportConnection) async throws -> Value
+    body: (consuming WebTransportConnection) async throws -> Value
 ) async throws -> Value {
     let serverSettingsPromise = eventLoopGroup.any().makePromise(of: HTTP3Settings.self)
     // If the connection fails before the server settings arrive, the promise must still be completed;
@@ -72,6 +72,7 @@ func withH3Connection<Value>(
                 port: port,
                 h3Connection: h3Connection,
                 serverSettingsFuture: serverSettingsPromise.futureResult,
+                flowControlSettings: configuration.flowControlSettings,
                 incomingStreamsAndDatagrams: incomingStreamsAndDatagrams,
                 datagramChannel: connectionChannel
             )
