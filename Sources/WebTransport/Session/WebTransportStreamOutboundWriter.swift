@@ -1,4 +1,3 @@
-import HTTPTypes
 public import NIOCore
 import NIOHTTPTypes
 

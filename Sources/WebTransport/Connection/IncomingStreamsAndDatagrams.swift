@@ -39,7 +39,7 @@ extension WebTransportConnection {
         }
 
         /// Releases a session slot.
-        /// 
+        ///
         /// - Parameter id: The ID of the session to remove. Pass `nil` if the session was never activated.
         func removeSession(id: QUICStreamID?) {
             self.state.withLock {

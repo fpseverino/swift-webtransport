@@ -123,7 +123,7 @@ public struct WebTransportSession: Sendable, ~Copyable {
     ///
     /// - Returns: The value returned by the `operation` closure.
     public func withBidirectionalStream<Value>(
-        operation: (NIOAsyncChannelInboundStream<ByteBuffer>, consuming WebTransportStreamOutboundWriter) async throws -> Value
+        operation: (WebTransportStreamInboundStream, consuming WebTransportStreamOutboundWriter) async throws -> Value
     ) async throws -> Value {
         if let maxBidirectionalStreams = self.flowControlHandler.reserveBidirectionalStream() {
             try await self.connectStreamWriter.write(.body(.wtBiStreamsBlockedCapsule(maxStreams: maxBidirectionalStreams)))
@@ -135,7 +135,7 @@ public struct WebTransportSession: Sendable, ~Copyable {
             buffer.writeEncodedInteger(0x41, strategy: .quic)
             buffer.writeEncodedInteger(self.sessionID.rawValue, strategy: .quic)
             try await outboundStream.write(buffer)
-            return try await operation(inboundStream, self.makeOutboundWriter(outboundStream))
+            return try await operation(.init(backing: inboundStream), self.makeOutboundWriter(outboundStream))
         }
     }
 
