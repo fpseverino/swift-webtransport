@@ -20,16 +20,15 @@ jobs:
     uses: swiftlang/github-workflows/.github/workflows/soundness.yml@0.0.15
     with:
       license_header_check_enabled: false
-      docs_check_container_image: "swift:6.3"
+      docs_check_container_image: "swift:6.4"
       api_breakage_check_enabled: false
-      format_check_container_image: "swift:6.3"
+      format_check_container_image: "swift:6.4"
 
   macos-tests:
     name: macOS tests
     strategy:
       matrix:
         macos-version:
-          - macos-26
           - xcode-27
     runs-on: ${{ matrix.macos-version }}
     timeout-minutes: 60
@@ -87,7 +86,6 @@ jobs:
     strategy:
       matrix:
         swift-version:
-          - '6.3'
           - '6.4'
     runs-on: ubuntu-latest
     container:

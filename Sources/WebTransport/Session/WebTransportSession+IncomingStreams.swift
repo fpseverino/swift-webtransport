@@ -22,7 +22,7 @@ extension WebTransportSession {
             AsyncIterator(base: self.base.makeAsyncIterator())
         }
 
-        public struct AsyncIterator: AsyncIteratorProtocol {
+        public struct AsyncIterator: AsyncIteratorProtocol, ~Sendable {
             @usableFromInline
             var base: BaseAsyncSequence.AsyncIterator
 
@@ -39,9 +39,6 @@ extension WebTransportSession {
         }
     }
 }
-
-@available(*, unavailable)
-extension WebTransportSession.IncomingUnidirectionalStreams.AsyncIterator: Sendable {}
 
 extension WebTransportSession {
     /// An asynchronous sequence of bidirectional streams opened by the server.
@@ -65,7 +62,7 @@ extension WebTransportSession {
             AsyncIterator(base: self.base.makeAsyncIterator())
         }
 
-        public struct AsyncIterator: AsyncIteratorProtocol {
+        public struct AsyncIterator: AsyncIteratorProtocol, ~Sendable {
             @usableFromInline
             var base: BaseAsyncSequence.AsyncIterator
 
@@ -82,6 +79,3 @@ extension WebTransportSession {
         }
     }
 }
-
-@available(*, unavailable)
-extension WebTransportSession.IncomingBidirectionalStreams.AsyncIterator: Sendable {}

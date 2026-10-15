@@ -14,7 +14,7 @@ public struct WebTransportStreamInboundStream: AsyncSequence, Sendable {
         AsyncIterator(backing: self.backing.makeAsyncIterator())
     }
 
-    public struct AsyncIterator: AsyncIteratorProtocol {
+    public struct AsyncIterator: AsyncIteratorProtocol, ~Sendable {
         @usableFromInline
         var backing: NIOAsyncChannelInboundStream<ByteBuffer>.AsyncIterator
 
@@ -35,6 +35,3 @@ public struct WebTransportStreamInboundStream: AsyncSequence, Sendable {
         }
     }
 }
-
-@available(*, unavailable)
-extension WebTransportStreamInboundStream.AsyncIterator: Sendable {}
