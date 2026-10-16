@@ -42,7 +42,7 @@ struct Example {
 
                 // Await the incoming unidirectional stream from the server.
                 for await stream in session.incomingUnidirectionalStreams {
-                    try await stream.executeThenClose { inbound in
+                    try await stream.withStream { inbound in
                         for try await buffer in inbound {
                             Logger.current.info("Client received on unidirectional stream: '\(String(buffer: buffer))'")
                             break

@@ -183,7 +183,10 @@ public struct WebTransportConnection: Sendable, ~Copyable {
             activeSessionID = sessionID
 
             let (incomingUniStreams, incomingUniStreamsContinuation) = WebTransportSession.IncomingUnidirectionalStreams.makeStream()
-            let (incomingBiStreams, incomingBiStreamsContinuation) = WebTransportSession.IncomingBidirectionalStreams.makeStream()
+            let (incomingBiStreams, incomingBiStreamsContinuation) = WebTransportSession.IncomingBidirectionalStreams.makeStream(
+                flowControlHandler: flowControlHandler,
+                connectStreamWriter: requestWriter
+            )
             let (incomingDatagrams, incomingDatagramsContinuation) = AsyncStream<ByteBuffer>.makeStream()
             defer {
                 incomingUniStreamsContinuation.finish()
@@ -211,7 +214,7 @@ public struct WebTransportConnection: Sendable, ~Copyable {
                     incomingUnidirectionalStreams: incomingUniStreams,
                     incomingBidirectionalStreams: incomingBiStreams,
                     datagramChannel: self.datagramChannel,
-                    incomingDatagrams: incomingDatagrams
+                    incomingDatagrams: .init(backing: incomingDatagrams)
                 )
             )
         }

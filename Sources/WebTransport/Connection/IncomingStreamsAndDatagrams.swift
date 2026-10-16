@@ -78,7 +78,7 @@ extension WebTransportConnection {
         ///   - stream: The incoming unidirectional stream.
         ///   - sessionID: The ID of the session to which the stream belongs.
         func yieldUnidirectionalStream(_ stream: NIOAsyncChannel<ByteBuffer, Never>, sessionID: QUICStreamID) {
-            self.state.withLock { _ = $0.sessions[sessionID]?.incomingUnidirectionalStreamsContinuation.yield(stream) }
+            self.state.withLock { _ = $0.sessions[sessionID]?.incomingUnidirectionalStreamsContinuation.yield(.init(channel: stream)) }
         }
 
         /// Yields an incoming bidirectional stream to the corresponding session.

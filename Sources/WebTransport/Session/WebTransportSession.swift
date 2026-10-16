@@ -59,7 +59,7 @@ public struct WebTransportSession: Sendable, ~Copyable {
     /// The channel used for sending HTTP Datagrams
     private let datagramChannel: any Channel
     /// An asynchronous sequence of incoming datagrams
-    public let incomingDatagrams: AsyncStream<ByteBuffer>
+    public let incomingDatagrams: IncomingDatagrams
 
     init(
         sessionID: QUICStreamID,
@@ -74,7 +74,7 @@ public struct WebTransportSession: Sendable, ~Copyable {
         incomingUnidirectionalStreams: IncomingUnidirectionalStreams,
         incomingBidirectionalStreams: IncomingBidirectionalStreams,
         datagramChannel: any Channel,
-        incomingDatagrams: AsyncStream<ByteBuffer>
+        incomingDatagrams: IncomingDatagrams
     ) {
         self.sessionID = sessionID
         self.applicationProtocol = applicationProtocol

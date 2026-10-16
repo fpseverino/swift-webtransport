@@ -126,7 +126,7 @@ struct WebTransportSessionTests {
                     }
 
                     for await stream in session.incomingUnidirectionalStreams {
-                        try await stream.executeThenClose { inbound in
+                        try await stream.withStream { inbound in
                             for try await message in inbound {
                                 #expect(message == ByteBuffer(string: "opened"))
                                 break
@@ -142,7 +142,7 @@ struct WebTransportSessionTests {
                     }
 
                     for await stream in session.incomingBidirectionalStreams {
-                        try await stream.executeThenClose { inbound, outbound in
+                        try await stream.withStream { inbound, outbound in
                             var iterator = inbound.makeAsyncIterator()
                             #expect(try await iterator.next() == ByteBuffer(string: "opened"))
                             for message in ["Hello again!", "Hi, mom!", "Bye bye!"] {
